@@ -2,9 +2,10 @@
 // 座標: x = 前(頭が +x)、y = 上、z = 体の左右。単位はおおよそメートル(全長 約 8.5)。
 // 部品は 2 系統: skin(皮膚)と skeleton(骨格)。皮膚を外すと骨格が見える。ワイヤーフレームは両方に掛かる。
 import * as THREE from "three";
-import * as TEX from "./tri-tex.js";
-import { buildSkull, buildFrill } from "./tri-skull.js";
-import { createRig } from "./tri-walk.js";   // 脚の関節と歩く動き   // 頭骨(2026-10-04 作り直し。標本写真から輪郭を読み取った)   // 肌の画像(make-tex.py で色と法線マップにしたもの。data URI)
+import * as TEX from "./tri-tex.js";                    // 肌の画像(make-tex.py で色と法線マップにしたもの。data URI)
+import { buildSkull, buildFrill } from "./tri-skull.js"; // 頭骨とフリル(標本写真から輪郭を読み取った)
+import { createRig } from "./tri-walk.js";              // 脚の関節と歩く動き
+import { buildRibcage } from "./tri-ribs.js";           // 肋骨・胸骨
 
 // 肌の画像を読み込む。部品ごとに繰り返しの回数(repeat)を変えるため、同じ画像から複製を作る。
 // 読み終えたら onTexturesReady の呼び出し元へ知らせる(静止画の書き出しは、読み終えてから描く)。
@@ -123,16 +124,26 @@ function spineCurve() {
 }
 
 // 胴の皮膚: 背骨に沿って断面の楕円を変えながらつないだ管(LatheGeometry では作れない形なので自前で)
+// 胴の皮膚の断面(t = 0 首 → 1 尾の先)。半径 [上下, 左右]。肋骨・胸骨を皮膚の内側に収めるのにも使う
+function bodyProf(t) {
+  const hump = Math.exp(-Math.pow((t - 0.32) / 0.26, 2));
+  const neck = Math.exp(-Math.pow((t - 0.1) / 0.12, 2));
+  const tail = Math.pow(Math.max(0, 1 - Math.max(0, t - 0.45) / 0.55), 1.5);   // 尾は先へ向けて細く絞る
+  const ry = 0.20 + 0.95 * hump + 0.12 * neck;
+  const rz = 0.18 + 0.80 * hump + 0.16 * neck;
+  return [ry * (t > 0.45 ? tail : 1) + 0.03, rz * (t > 0.45 ? tail : 1) + 0.03];
+}
+// 背骨は胴の断面の中心より背側にある: 断面を腹側へ寄せる量(半径に対する比)
+const bodyDown = (t) => 0.55 * Math.min(1, t / 0.2);
+// 背骨の曲線の上で、前後の位置 x に当たる t(胴の皮膚と同じ getPoint の t)
+function tAtX(curve, x) {
+  let best = 0, bd = Infinity;
+  for (let i = 0; i <= 2000; i++) { const t = i / 2000, d = Math.abs(curve.getPoint(t).x - x); if (d < bd) { bd = d; best = t; } }
+  return best;
+}
 function bodyGeometry(curve) {
   const N = 96, R = 48;
-  const prof = (t) => {                 // t = 0(首)→ 1(尾の先)。半径 [上下, 左右]
-    const hump = Math.exp(-Math.pow((t - 0.32) / 0.26, 2));
-    const neck = Math.exp(-Math.pow((t - 0.1) / 0.12, 2));
-    const tail = Math.pow(Math.max(0, 1 - Math.max(0, t - 0.45) / 0.55), 1.5);   // 尾は先へ向けて細く絞る
-    const ry = 0.20 + 0.95 * hump + 0.12 * neck;
-    const rz = 0.18 + 0.80 * hump + 0.16 * neck;
-    return [ry * (t > 0.45 ? tail : 1) + 0.03, rz * (t > 0.45 ? tail : 1) + 0.03];
-  };
+  const prof = bodyProf;
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const t = i / N, p = curve.getPoint(t);
@@ -145,7 +156,7 @@ function bodyGeometry(curve) {
       // 腹側を少し平らに(下半分の半径を詰める)
       const flat = Math.sin(a) < 0 ? 0.82 : 1.0;
       // 背骨は胴の断面の中心より背側にある: 断面を腹側へ寄せる(0.78 ではカバのように見えたので 0.55)
-      const down = 0.55 * Math.min(1, t / 0.2);   // 頭に近いほど下げる量を小さく(あごの下に出っ張らないように)
+      const down = bodyDown(t);   // 頭に近いほど下げる量を小さく(あごの下に出っ張らないように)
       const q = p.clone().addScaledVector(nup, Math.sin(a) * ry * flat - ry * down).addScaledVector(side, Math.cos(a) * rz);
       pos.push(q.x, q.y, q.z); uv.push(t * 4, j / R);
     }
@@ -167,7 +178,16 @@ function legPoints(front, side) {
   // 前あしは肘を少し外へ張る(外開きの角度は議論がある。Fujiwara 2009 ほか。推定の初期値)
   //   肩は 1.95 → 1.82 へ下げ、肘を曲げた姿勢にした(2026-10-04)。1.95 では脚がほぼ伸びきっていて(関節の長さの和 1.97)、
   //   歩くときに前へ振り出した足が地面に届かなかった。前あしの肘は押し出しの間も 90〜115 度に曲がっている(TH2007)
-  if (front) return [new THREE.Vector3(1.05, 1.82, z), new THREE.Vector3(0.83, 1.02, z * 1.30), new THREE.Vector3(1.10, 0.28, z * 1.12), new THREE.Vector3(1.22, 0.08, z * 1.12)];
+  //   2026-10-04 改: 前あしを半ば這う姿勢にした(Thompson & Holmes 2007 の 8 姿勢の表、RESEARCH B-2)。以前は上腕骨がほぼ縦に立つ
+  //   柱の脚で、資料の角度と合わなかった(横から見た水平からの下がり 74.6 度 / 資料 10〜43 度、正面から見た外への開き 13.1 度 / 32〜68 度)。
+  //   上腕骨: 横から見て水平から 35 度下がり、上から見て 25 度外へ開き、後ろへ向く(資料の範囲の中ほど。姿勢は議論が分かれる)。
+  //   関節窩は低く(1.55)、手は肩の下へ寄せる(Paul & Christiansen 2000 の要旨「手は肩関節の真下」)。
+  if (front) {
+    const sh = new THREE.Vector3(1.05, 1.55, z);
+    const L1 = 0.85, dir = new THREE.Vector3(-1, -Math.tan(35 * Math.PI / 180), side * Math.tan(25 * Math.PI / 180)).normalize();
+    const elbow = sh.clone().addScaledVector(dir, L1);
+    return [sh, elbow, new THREE.Vector3(0.80, 0.28, side * 0.70), new THREE.Vector3(0.92, 0.08, side * 0.72)];
+  }
   return [new THREE.Vector3(-1.05, 2.1, z), new THREE.Vector3(-0.75, 1.15, z), new THREE.Vector3(-1.05, 0.45, z), new THREE.Vector3(-0.85, 0.0, z)];
 }
 
@@ -241,20 +261,17 @@ export function buildTriceratops() {
     skel.add(v);
     // 棘突起(背の上へ伸びる骨)
     skel.add(rod(p, p.clone().add(new THREE.Vector3(0, size * 2.2, 0)), size * 0.35, size * 0.2, boneMat, 6));
-    if (t > 0.12 && t < 0.48) {         // 胴の肋骨
-      for (const s of [1, -1]) {
-        const ribDepth = 0.9 + 0.5 * Math.exp(-Math.pow((t - 0.32) / 0.12, 2));
-        const c = new THREE.QuadraticBezierCurve3(p, p.clone().add(new THREE.Vector3(0, -0.15, s * 0.95)), p.clone().add(new THREE.Vector3(0.05, -ribDepth, s * 0.62)));
-        skel.add(new THREE.Mesh(new THREE.TubeGeometry(c, 10, 0.03, 6, false), boneMat));
-      }
-    }
   }
+  // 肋骨・胸骨(tri-ribs.js。資料は docs/RESEARCH-ribcage-and-sternum.md)
+  const cartilageMat = mat(0xcfd8d4, { roughness: 0.4, transparent: true, opacity: 0.55 });
+  skel.add(buildRibcage(curve, { bone: boneMat, cartilage: cartilageMat }, { bodyProf, bodyDown, tAtX, headX: 3.05 + HEAD.x, coracoid: [1.15, 1.62, 0.64] }));
   // 肩甲骨・骨盤
   // 肩甲骨(後ろ上へ延びる板)・烏口骨・腸骨・坐骨を分ける(模式的な途中案で、寛骨臼・恥骨は未)
   for (const s of [1, -1]) {
-    const scapula = blob(new THREE.Vector3(0.72, 2.28, s * 0.66), new THREE.Vector3(0.62, 0.16, 0.055), boneMat, 32);
-    scapula.rotation.z = -0.50; skel.add(scapula);
-    skel.add(blob(new THREE.Vector3(1.16, 1.98, s * 0.64), new THREE.Vector3(0.23, 0.20, 0.07), boneMat, 24));
+    // 肩甲骨は 54 度ほどに立て、下の端を関節窩(1.05, 1.55)へ届かせる(角竜類の肩甲骨は仙骨の長軸に対して約 55 度。SR2015)
+    const scapula = blob(new THREE.Vector3(0.66, 2.10, s * 0.66), new THREE.Vector3(0.62, 0.16, 0.055), boneMat, 32);
+    scapula.rotation.z = -0.95; skel.add(scapula);
+    skel.add(blob(new THREE.Vector3(1.15, 1.62, s * 0.64), new THREE.Vector3(0.23, 0.20, 0.07), boneMat, 24));
     skel.add(blob(new THREE.Vector3(-0.95, 2.47, s * 0.55), new THREE.Vector3(0.78, 0.22, 0.10), boneMat, 32));
     skel.add(rod(new THREE.Vector3(-1.05, 2.10, s * 0.62), new THREE.Vector3(-1.68, 1.55, s * 0.42), 0.10, 0.065, boneMat, 16));
   }
@@ -351,7 +368,7 @@ export function buildTriceratops() {
   const layerMats = {
     skin: [skinMat, skinMatPlain, skinLimb, skinHead], muscle: [muscleMat, tendonMat],
     organs: [heartMat, lungMat, liverMat, gutMat], vessels: [artMat, veinMat], brain: [brainMat],
-    skeleton: [boneMat, boneDark, hornMat, beakMat, eyeMat, toothMat],
+    skeleton: [boneMat, boneDark, hornMat, beakMat, eyeMat, toothMat, cartilageMat],
   };
   return { root, layers, layerMats, skin, skeleton: skel, jaws: [SK.jawPivot, SK.skinJawPivot], rig };
 }
@@ -387,6 +404,11 @@ export const VIEWS = {
   chk_walk3: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walk: 0.75 },
   chk_walkscan: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walkScan: 40 },
   chk_walk_skin: { pos: [6.5, 2.6, -8.5], target: [0, 1.3, 0], layers: "skin", wire: 0, walk: 0.4 },
+  // 肋骨・胸骨・前あしの確かめ(骨格だけ)。chk_ribs_* は肋骨が皮膚の外へ出た量を document.title へ出す(ribCheck)
+  chk_ribs_side:  { pos: [0.5, 1.5, 7.5],  target: [0.5, 1.4, 0], layers: "skeleton", wire: 0, ribCheck: 1 },
+  chk_ribs_front: { pos: [6.5, 1.6, 0.0],  target: [0.6, 1.3, 0], layers: "skeleton", wire: 0, ribCheck: 1 },
+  chk_ribs_under: { pos: [1.0, -2.6, 0.9], target: [1.0, 1.1, 0], layers: "skeleton", wire: 0, ribCheck: 1 },
+  chk_ribs_skin:  { pos: [0.5, 1.5, 7.5],  target: [0.5, 1.4, 0], layers: "skin skeleton", wire: 1, ribCheck: 1 },
   chk_photo:  { pos: [3.3962, 1.9246, -10], target: [3.3962, 1.9246, 0], layers: "skeleton", wire: 0, ortho: 0.98681, jaw: 0 },
   muscle:     { pos: [6.5, 3.8, 8.5],   target: [-0.3, 1.5, 0], layers: "muscle skeleton", wire: 0 },
   organs:     { pos: [2.5, 2.8, 7.5],   target: [0.2, 1.8, 0],  layers: "skin organs vessels skeleton", wire: 1 },

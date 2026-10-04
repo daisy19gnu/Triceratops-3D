@@ -61,6 +61,7 @@ function setup(host, view, w, h, interactive) {
   if (interactive) {
     controls = new OrbitControls(camera, renderer.domElement);
     controls.target.copy(target); controls.enableDamping = false; controls.update();
+    controls.enabled = false;            // 掴むまでは回さない(attachGrab。短いクリックで掴む・離す)
     controls.addEventListener("change", render);
   }
   apply();
@@ -113,7 +114,13 @@ function setup(host, view, w, h, interactive) {
     window.__TRI_WALKSCAN = out; document.title = "TRI_WALKSCAN " + JSON.stringify(out);
     rig.pose(null);
   }
-  return { state, apply, render, walk };
+  // 確かめる用: 肋骨の点が皮膚の断面の外へ出た量(断面の楕円で正規化した半径の最大値。1 を超えたら皮膚の外)
+  if (v.ribCheck) {
+    const rc = model.root.getObjectByName("ribcage");
+    window.__TRI_RIBS = rc ? { maxOut: +rc.userData.maxOut.toFixed(3), sternal: rc.userData.sternal } : null;
+    document.title = "TRI_RIBS " + JSON.stringify(window.__TRI_RIBS);
+  }
+  return { state, apply, render, walk, controls };
 }
 // 肌の画像を読み終えたら、すべての図版を描き直す(静止画の書き出しは、そのあとで「描き終えた」と知らせる)
 const renders = []; let texReady = false;
@@ -121,8 +128,52 @@ onTexturesReady(() => { texReady = true; for (const r of renders) r(); if (windo
 function track(t) { renders.push(t.render); if (texReady) t.render(); return t;
 }
 
+// 回す操作の切り替え(2026-10-04 Lead「キャンバスクリックで 3D 制御を掴むのはいいが、開放ができなくなる」
+//   →「3D 制御用のボタンをつけるのが一番いい」)。
+//   - ボタン「回す」を押すと回す操作が始まり、もう一度押すか Esc で終わる。
+//   - 回している間: ドラッグで回す・ホイールで寄る。押す・離す・クリック・ホイールは送りの操作(ページめくり)へ伝えない。
+//   - 回していない間: 図版は何も受け取らず、クリック・ドラッグ・ホイールはすべて送りの操作・スクロールへ渡す
+//     (OrbitControls は enabled = false で素通しする)。図版の上でもページをめくれる。
+//   - 以前の案(短いクリックで掴む・離す)は、回していない時に図版をクリックするとページ送りでなく「掴む」になる矛盾があり、やめた。
+let grabStyleDone = false;
+function attachGrab(host, cv, controls, startGrabbed) {
+  if (!grabStyleDone) {
+    const st = document.createElement("style");
+    st.textContent = "div.tri.tri-grabbed{outline:4px solid #b5651d;outline-offset:-4px}" +
+      "div.tri .tri-hint{position:absolute;right:12px;bottom:12px;font:bold min(22px,3.4vw)/1.2 'Noto Sans CJK JP',sans-serif;color:#3b2f1c;" +
+      "background:rgba(255,252,244,.88);border-radius:8px;padding:6px 10px;pointer-events:none}";
+    document.head.appendChild(st); grabStyleDone = true;
+  }
+  const hint = document.createElement("div"); hint.className = "tri-hint"; host.appendChild(hint);
+  let grabbed = false;
+  const listeners = [];
+  const set = (on) => {
+    grabbed = on; controls.enabled = on;
+    cv.style.touchAction = on ? "none" : "auto";      // 回していない間はタッチでのスクロールも通す
+    cv.style.cursor = on ? "grab" : "default";
+    host.classList.toggle("tri-grabbed", on);
+    hint.textContent = on ? "ドラッグで回せます。「回す」をもう一度押すか Esc で終わり" : "";
+    hint.style.display = on ? "" : "none";
+    for (const f of listeners) f(on);
+  };
+  // 回している間の操作は、送りの操作へ伝えない
+  for (const ev of ["pointerdown", "pointerup", "click", "mousedown", "mouseup", "touchstart", "touchend", "wheel"]) {
+    cv.addEventListener(ev, (e) => { if (grabbed) e.stopPropagation(); }, { passive: true });
+  }
+  document.addEventListener("keydown", (e) => { if (grabbed && e.key === "Escape") set(false); });
+  set(!!startGrabbed);
+  return { get: () => grabbed, set, onChange: (f) => { listeners.push(f); f(grabbed); } };
+}
+
 function ui(host, t) {
   const bar = document.createElement("div"); bar.className = "tri-ui";
+  if (t.grab) {                          // 回す操作の切り替え(attachGrab)
+    const gb = document.createElement("button"); gb.type = "button"; gb.textContent = "回す";
+    gb.addEventListener("click", (e) => { e.stopPropagation(); t.grab.set(!t.grab.get()); });
+    for (const ev of ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend"]) gb.addEventListener(ev, (e) => e.stopPropagation());
+    t.grab.onChange((on) => gb.setAttribute("aria-pressed", on ? "true" : "false"));
+    bar.appendChild(gb);
+  }
   const mk = (label, key) => {
     const b = document.createElement("button"); b.type = "button"; b.textContent = label;
     const sync = () => b.setAttribute("aria-pressed", t.state[key] ? "true" : "false");
@@ -157,9 +208,7 @@ function main() {
     const w = host.clientWidth, h = host.clientHeight;
     const t = track(setup(host, host.dataset.view || "free", w, h, true));
     const fb = host.querySelector("img.tri-fallback"); if (fb) fb.style.display = "none";
-    // 図版の上のドラッグを、送りの操作へ伝えない(回すための操作なので)
-    const cv = host.querySelector("canvas");
-    for (const ev of ["pointerdown", "pointerup", "click", "mousedown", "mouseup", "touchstart", "touchend"]) cv.addEventListener(ev, (e) => e.stopPropagation());
+    t.grab = attachGrab(host, host.querySelector("canvas"), t.controls, host.dataset.grab === "1");
     if (host.dataset.ui !== "0") ui(host, t);
   }
 }
