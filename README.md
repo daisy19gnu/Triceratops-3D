@@ -8,13 +8,14 @@
 
 骨格は化石の資料にもとづいていますが、**筋肉・内臓・血管・皮膚の色、歩き方は推定**です。何にもとづいたか、何を推定したかは
 [docs/MODEL-NOTES.md](docs/MODEL-NOTES.md)、調べた資料は [docs/RESEARCH-skull-and-locomotion.md](docs/RESEARCH-skull-and-locomotion.md)(頭骨・歩き方)と
-[docs/RESEARCH-ribcage-and-sternum.md](docs/RESEARCH-ribcage-and-sternum.md)(肋骨・胸骨)にあります。
+[docs/RESEARCH-ribcage-and-sternum.md](docs/RESEARCH-ribcage-and-sternum.md)(肋骨・胸骨)、
+[docs/RESEARCH-pelvis-and-hindlimb.md](docs/RESEARCH-pelvis-and-hindlimb.md)(骨盤・後ろあし)にあります。
 
 ## 置き場
 
 | 場所 | 中身 |
 |---|---|
-| `src/` | 模型(`tri-model.js`)、頭骨とフリル(`tri-skull.js`、標本写真から輪郭を読み取った)、肋骨と胸骨(`tri-ribs.js`)、脚の関節と歩く動き(`tri-walk.js`)、実行部(`tri-viewer.js`) |
+| `src/` | 模型(`tri-model.js`)、頭骨とフリル(`tri-skull.js`、標本写真から輪郭を読み取った)、肋骨と胸骨(`tri-ribs.js`)、骨盤と仙骨(`tri-pelvis.js`)、脚の関節と歩く動き(`tri-walk.js`)、実行部(`tri-viewer.js`) |
 | `tools/` | まとめと静止画の書き出し(`build.sh`)、肌の画像の埋め込み(`make-tex.py`)、写真との照合(`photo-compare.py`)、「回す」の確かめ(`check-grab.sh`) |
 | `textures/` | 肌の元画像 |
 | `ref/` | 照合に使う参照写真(Public domain) |

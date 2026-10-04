@@ -6,6 +6,7 @@ import * as TEX from "./tri-tex.js";                    // 肌の画像(make-tex
 import { buildSkull, buildFrill } from "./tri-skull.js"; // 頭骨とフリル(標本写真から輪郭を読み取った)
 import { createRig } from "./tri-walk.js";              // 脚の関節と歩く動き
 import { buildRibcage } from "./tri-ribs.js";           // 肋骨・胸骨
+import { buildPelvis } from "./tri-pelvis.js";          // 骨盤・仙骨
 
 // 肌の画像を読み込む。部品ごとに繰り返しの回数(repeat)を変えるため、同じ画像から複製を作る。
 // 読み終えたら onTexturesReady の呼び出し元へ知らせる(静止画の書き出しは、読み終えてから描く)。
@@ -188,7 +189,15 @@ function legPoints(front, side) {
     const elbow = sh.clone().addScaledVector(dir, L1);
     return [sh, elbow, new THREE.Vector3(0.80, 0.28, side * 0.70), new THREE.Vector3(0.92, 0.08, side * 0.72)];
   }
-  return [new THREE.Vector3(-1.05, 2.1, z), new THREE.Vector3(-0.75, 1.15, z), new THREE.Vector3(-1.05, 0.45, z), new THREE.Vector3(-0.85, 0.0, z)];
+  //   2026-10-04 改: 後ろあしの骨の長さを USNM の組み立て骨格に合わせた(大腿骨 1.15・脛骨 0.72・中足骨 III 0.355 m、Gilmore 1905。
+  //   脛骨/大腿骨 = 0.63。資料により 0.59〜0.66)。以前は 1.00 : 0.76 : 0.49 で、脛骨と足が長すぎた。
+  //   姿勢は「ほぼまっすぐ、膝はわずかに曲げる」(Lull 1933)、足は趾行で中足骨を立てる(Brown 1917)。股関節の高さ 2.10 に合わせると、
+  //   大腿骨は前へ 15 度、脛骨は後ろへ 12 度、中足骨は水平から 55 度になる(角度は資料に数値が無く、長さと高さから決めた)。
+  const deg = Math.PI / 180, hip = new THREE.Vector3(-1.05, 2.10, z);
+  const knee = hip.clone().add(new THREE.Vector3(1.15 * Math.sin(15 * deg), -1.15 * Math.cos(15 * deg), 0));
+  const ankle = knee.clone().add(new THREE.Vector3(-0.72 * Math.sin(12 * deg), -0.72 * Math.cos(12 * deg), 0));
+  const mtp = ankle.clone().add(new THREE.Vector3(0.355 * Math.cos(55 * deg), -0.355 * Math.sin(55 * deg), 0));
+  return [hip, knee, ankle, mtp];
 }
 
 // くちばし: 左右の幅と、鉤のある横の輪郭を持つ簡易形(円錐ではない。輪郭検討用の近似)
@@ -262,18 +271,18 @@ export function buildTriceratops() {
     // 棘突起(背の上へ伸びる骨)
     skel.add(rod(p, p.clone().add(new THREE.Vector3(0, size * 2.2, 0)), size * 0.35, size * 0.2, boneMat, 6));
   }
+  // 骨盤・仙骨(tri-pelvis.js。資料は docs/RESEARCH-pelvis-and-hindlimb.md)
+  skel.add(buildPelvis({ bone: boneMat, boneDark }, { hip: new THREE.Vector3(-1.05, 2.10, 0.68), curve, tAtX }));
   // 肋骨・胸骨(tri-ribs.js。資料は docs/RESEARCH-ribcage-and-sternum.md)
   const cartilageMat = mat(0xcfd8d4, { roughness: 0.4, transparent: true, opacity: 0.55 });
   skel.add(buildRibcage(curve, { bone: boneMat, cartilage: cartilageMat }, { bodyProf, bodyDown, tAtX, headX: 3.05 + HEAD.x, coracoid: [1.15, 1.62, 0.64] }));
   // 肩甲骨・骨盤
-  // 肩甲骨(後ろ上へ延びる板)・烏口骨・腸骨・坐骨を分ける(模式的な途中案で、寛骨臼・恥骨は未)
+  // 肩甲骨(後ろ上へ延びる板)・烏口骨。腸骨・坐骨・恥骨は tri-pelvis.js
   for (const s of [1, -1]) {
     // 肩甲骨は 54 度ほどに立て、下の端を関節窩(1.05, 1.55)へ届かせる(角竜類の肩甲骨は仙骨の長軸に対して約 55 度。SR2015)
     const scapula = blob(new THREE.Vector3(0.66, 2.10, s * 0.66), new THREE.Vector3(0.62, 0.16, 0.055), boneMat, 32);
     scapula.rotation.z = -0.95; skel.add(scapula);
     skel.add(blob(new THREE.Vector3(1.15, 1.62, s * 0.64), new THREE.Vector3(0.23, 0.20, 0.07), boneMat, 24));
-    skel.add(blob(new THREE.Vector3(-0.95, 2.47, s * 0.55), new THREE.Vector3(0.78, 0.22, 0.10), boneMat, 32));
-    skel.add(rod(new THREE.Vector3(-1.05, 2.10, s * 0.62), new THREE.Vector3(-1.68, 1.55, s * 0.42), 0.10, 0.065, boneMat, 16));
   }
   // 四肢の骨と指
   for (const front of [true, false]) for (const s of [1, -1]) {
@@ -405,6 +414,9 @@ export const VIEWS = {
   chk_walkscan: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walkScan: 40 },
   chk_walk_skin: { pos: [6.5, 2.6, -8.5], target: [0, 1.3, 0], layers: "skin", wire: 0, walk: 0.4 },
   // 肋骨・胸骨・前あしの確かめ(骨格だけ)。chk_ribs_* は肋骨が皮膚の外へ出た量を document.title へ出す(ribCheck)
+  chk_pelvis_side: { pos: [-1.0, 1.5, 6.0], target: [-1.0, 1.4, 0], layers: "skeleton", wire: 0 },
+  chk_pelvis_back: { pos: [-6.0, 2.4, 2.5], target: [-1.0, 1.6, 0], layers: "skeleton", wire: 0 },
+  chk_pelvis_top:  { pos: [-1.0, 7.5, 0.01], target: [-1.0, 1.8, 0], layers: "skeleton", wire: 0 },
   chk_ribs_side:  { pos: [0.5, 1.5, 7.5],  target: [0.5, 1.4, 0], layers: "skeleton", wire: 0, ribCheck: 1 },
   chk_ribs_front: { pos: [6.5, 1.6, 0.0],  target: [0.6, 1.3, 0], layers: "skeleton", wire: 0, ribCheck: 1 },
   chk_ribs_under: { pos: [1.0, -2.6, 0.9], target: [1.0, 1.1, 0], layers: "skeleton", wire: 0, ribCheck: 1 },

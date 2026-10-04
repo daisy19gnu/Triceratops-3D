@@ -83,7 +83,9 @@ function solve(L, phi, stride) {
   const { P, L1, L2 } = L;
   const hip = new THREE.Vector2(P[0].x, P[0].y), toe0 = new THREE.Vector2(P[3].x, P[3].y);
   const half = GAIT.duty * stride / 2;                    // 着いている間に、胴に対してつま先が後ろへ動く距離の半分
-  const xc = (toe0.x + hip.x) / 2;                        // 着く範囲の中心(つま先の静止位置と肩/股の中ほど)
+  // 着く範囲の中心は肩/股の真下寄り(つま先の静止位置へ 4 分の 1)。中ほど(2 分の 1)では、膝をほぼ伸ばした後ろあし
+  //   (2026-10-04、USNM の骨の長さ)が前へ振り出したとき届かなかった(chk_walkscan で届かない 3 回・浮き 10.6 mm)
+  const xc = hip.x + 0.25 * (toe0.x - hip.x);
   let tx, ty, swing = 0;
   if (phi < GAIT.duty) { const u = phi / GAIT.duty; tx = xc + half * (1 - 2 * u); ty = toe0.y; }
   else {
