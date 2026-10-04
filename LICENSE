@@ -1,0 +1,11 @@
+Triceratops 3D
+
+Copyright (c) 2026 Minori IKEDA. All rights reserved.
+無断複製・再配布を禁じます。
+
+このリポジトリは閲覧のために公開しています。上記の権利表記は、このリポジトリの自前のコードと画像
+(src/、tools/、textures/、kawaii-v1/、docs/、index.html)に適用されます。
+
+次のものはそれぞれの権利者の条件に従います。
+- dist/tri-viewer.js と kawaii-v1/tri-viewer-bundle.js に同梱した three.js: MIT License(dist/LICENSE-three.txt)
+- ref/houston-left-1280.jpg: Public domain(出典は ref/README.md)

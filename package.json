@@ -1,0 +1,13 @@
+{
+  "name": "triceratops-3d",
+  "private": true,
+  "description": "夜明 歩『Triceratops』の図版の 3D の模型(three.js)",
+  "scripts": {
+    "build": "bash tools/build.sh bundle",
+    "render": "bash tools/build.sh render"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "three": "0.186.1"
+  }
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triceratops 3D</title>
+<meta name="description" content="夜明 歩『Triceratops』の図版の 3D の模型。ドラッグで回し、皮膚・筋肉・内臓・血管・脳・骨格の層を着け外しでき、歩かせられる。">
+<style>
+  :root { --bg: #f3efe4; --ink: #2e2618; --muted: #6b5a3c; --line: #d8cfba; --panel: #fbf8f1; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.6 "Noto Sans CJK JP", "Hiragino Sans", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header label { margin-left: auto; font-size: 14px; }
+  header select { font: inherit; padding: 2px 6px; }
+  main { position: relative; flex: 1; min-height: 320px; }
+  div.tri { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+  div.tri canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  div.tri .tri-ui { position: absolute; left: 12px; top: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+  div.tri .tri-ui button { font: bold 14px/1 inherit; padding: 8px 10px; border-radius: 8px; border: 2px solid var(--muted); background: rgba(255,252,244,.92); color: #3b2f1c; cursor: pointer; }
+  div.tri .tri-ui button[aria-pressed="true"] { background: var(--muted); color: #fff; }
+  .nogl { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 16px; text-align: center; }
+  footer { padding: 8px 16px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Triceratops 3D</h1>
+  <span class="sub">夜明 歩『Triceratops』の図版の模型。ドラッグで回せます。</span>
+  <label>視点 <select id="view"></select></label>
+</header>
+<main>
+  <div class="tri" id="tri"></div>
+  <div class="nogl" id="nogl">このブラウザでは WebGL が使えないため、模型を表示できません。</div>
+</main>
+<footer>
+  骨格は化石の資料にもとづきますが、筋肉・内臓・血管・皮膚の色と、歩き方は推定です(<a href="docs/MODEL-NOTES.md">MODEL-NOTES</a>)。
+  図版の描画に <a href="https://threejs.org/">three.js</a>(MIT License、<a href="dist/LICENSE-three.txt">使用許諾</a>)を使っています。
+</footer>
+<script>
+  // 視点の一覧(src/tri-model.js の VIEWS のうち、本の図版で使うもの)
+  const VIEWS = [["free", "自由に観察"], ["cover", "表紙"], ["side", "横から"], ["threequarter", "斜め前から"], ["skull", "頭骨とフリル"],
+    ["horns", "3 本の角"], ["beak", "くちばしと歯"], ["skeleton", "骨格"], ["muscle", "筋肉"], ["organs", "内臓"], ["vessels", "血管"],
+    ["brain", "脳"], ["legs", "あしと姿勢"], ["skinclose", "皮膚"], ["wire", "ワイヤーフレーム"]];
+  const q = new URLSearchParams(location.search);
+  const view = VIEWS.some(([k]) => k === q.get("view")) ? q.get("view") : "free";
+  const kawaii = q.get("kawaii") === "1";
+  const sel = document.getElementById("view");
+  for (const [k, label] of VIEWS) { const o = document.createElement("option"); o.value = k; o.textContent = label; o.selected = k === view; sel.appendChild(o); }
+  sel.addEventListener("change", () => { q.set("view", sel.value); location.search = q.toString(); });
+  document.getElementById("tri").dataset.view = view;
+  try { const c = document.createElement("canvas"); if (!(c.getContext("webgl2") || c.getContext("webgl"))) throw 0; }
+  catch { document.getElementById("nogl").style.display = "flex"; }
+  // 実行部は、ページの組み立てが済んでから読む(div.tri の大きさを測って描くため)
+  const s = document.createElement("script");
+  s.src = kawaii ? "kawaii-v1/tri-viewer-bundle.js" : "dist/tri-viewer.js";
+  document.body.appendChild(s);
+</script>
+</body>
+</html>
