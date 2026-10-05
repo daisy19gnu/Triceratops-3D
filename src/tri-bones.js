@@ -28,7 +28,7 @@ const smooth = (x) => x * x * (3 - 2 * x);
 //   opt = { r0: 近い端の半径, r1: 遠い端の半径, shaft: 中ほどの半径, flat: 断面の前後/左右の比, knobs: [{ u, at: [x, z], s: [sx, sy, sz] }] }
 //   knobs は骨の上の突起(局所の座標: u = 長さの割合、at = 断面の向き(x = 外/内、z = 前/後ろ)、s = 半径)
 export function longBone(a, b, mat, opt = {}) {
-  const { r0 = 0.1, r1 = 0.08, shaft = 0.05, flat = 0.8, knobs = [], hint } = opt;
+  const { r0 = 0.1, r1 = 0.08, shaft = 0.05, flat = 0.8, knobs = [], hint, bow = 0 } = opt;   // bow = 前(+Z)への反り(m)
   const L = a.distanceTo(b), g = placed(a, b, hint);
   const pts = [];
   const N = 24;
@@ -44,6 +44,10 @@ export function longBone(a, b, mat, opt = {}) {
   pts.unshift(new THREE.Vector2(0.001, 0)); pts.push(new THREE.Vector2(0.001, L));
   const geo = new THREE.LatheGeometry(pts, 18);
   geo.scale(1, 1, flat);
+  if (bow) {                                                     // 長い骨はまっすぐでなく、わずかに反る(スキャンの観察)
+    const pa = geo.attributes.position;
+    for (let i = 0; i < pa.count; i++) pa.setZ(i, pa.getZ(i) + bow * Math.sin(Math.PI * pa.getY(i) / L));
+  }
   g.add(new THREE.Mesh(geo, mat));
   for (const k of knobs) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), mat);
@@ -57,7 +61,8 @@ export function longBone(a, b, mat, opt = {}) {
 //   opt = { spine: 棘突起の高さ, spineBack: 棘突起の後ろへの傾き, trans: 横突起の長さ, chevron: 血道弓の長さ }
 export function vertebra(p, tan, size, mat, opt = {}) {
   const { spine = size * 2.2, spineBack = 0.25, trans = 0, chevron = 0 } = opt;
-  const len = size * 1.15;                                       // 椎体の前後の長さ
+  // 椎体の前後の長さ: 隣の椎骨までの距離(opt.len)に合わせ、前後でほぼ接する(以前は大きさから決め、尾で離れた円盤の列に見えた)
+  const len = opt.len || size * 1.15;
   const g = new THREE.Group(); g.position.copy(p);
   const fwd = tan.clone().normalize().negate();                  // 頭の向き
   // 右手系の基底(横 × 上 = 前)。以前は 横 = 前 × 上 で左手系になり、回転として扱えず尾の椎骨が横を向いた
@@ -72,12 +77,13 @@ export function vertebra(p, tan, size, mat, opt = {}) {
   g.add(new THREE.Mesh(c, mat));
   // 神経弓と棘突起: 前後に幅のある板(上ほど細く、後ろへ傾く)
   if (spine > 0) {
-    const sg = new THREE.BoxGeometry(size * 0.35, spine, len * 0.95, 1, 4, 1), pa = sg.attributes.position;   // 前後に幅広く、隣とほぼ接する
+    const sg = new THREE.BoxGeometry(size * 0.35, spine, len * 0.95, 3, 10, 4), pa = sg.attributes.position;   // 前後に幅広く、隣とほぼ接する。角を丸めるため分割を細かく
     for (let i = 0; i < pa.count; i++) {
       const t = (pa.getY(i) + spine / 2) / spine;                // 0 = 根元、1 = 先
       pa.setZ(i, pa.getZ(i) * (1 - 0.45 * t) - spineBack * spine * t);
       pa.setX(i, pa.getX(i) * (1 - 0.3 * t));
     }
+    roundBox(sg, size * 0.35, len * 0.95);
     sg.computeVertexNormals();
     const sm = new THREE.Mesh(sg, mat); sm.position.y = size * 0.75 + spine / 2; g.add(sm);
   }
@@ -89,8 +95,9 @@ export function vertebra(p, tan, size, mat, opt = {}) {
   }
   // 血道弓(尾の椎骨の下。後ろ下へ向く V 字の骨。先は 1 本の板)
   if (chevron > 0) {
-    const cg = new THREE.BoxGeometry(size * 0.3, chevron, len * 0.4, 1, 3, 1), pa = cg.attributes.position;
+    const cg = new THREE.BoxGeometry(size * 0.3, chevron, len * 0.4, 3, 8, 3), pa = cg.attributes.position;
     for (let i = 0; i < pa.count; i++) { const t = (chevron / 2 - pa.getY(i)) / chevron; pa.setZ(i, pa.getZ(i) * (1 - 0.3 * t) - 0.35 * chevron * t); }
+    roundBox(cg, size * 0.3, len * 0.4);
     cg.computeVertexNormals();
     const cm = new THREE.Mesh(cg, mat); cm.position.set(0, -size * 0.9 - chevron / 2, -len * 0.3); g.add(cm);
   }
@@ -116,4 +123,49 @@ export function digit(base, dir, lengths, width, mat, hoofed = true) {
     p = q;
   });
   return g;
+}
+
+// 箱の断面(x・z)の角を丸める: 断面を楕円寄りに押し縮める(棘突起・血道弓が箱に見えた)
+function roundBox(geo, wx, wz) {
+  const pa = geo.attributes.position;
+  for (let i = 0; i < pa.count; i++) {
+    const x = pa.getX(i), z = pa.getZ(i), ax = Math.abs(x) / (wx / 2 + 1e-9), az = Math.abs(z) / (wz / 2 + 1e-9);
+    const k = Math.min(1, 1 / Math.max(1e-6, Math.pow(Math.pow(ax, 2.6) + Math.pow(az, 2.6), 1 / 2.6)) * Math.max(ax, az));
+    pa.setX(i, x * k); pa.setZ(i, z * k);
+  }
+  geo.computeVertexNormals();
+}
+
+// 位置で決まる 3 次元の揺らぎ(値のノイズ)。同じ位置からは同じ値。骨ごとに凹凸が違うのは位置が違うから
+function hash3(x, y, z) { let h = (x * 374761393 + y * 668265263 + z * 2147483647) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), fx = x - xi, fy = y - yi, fz = z - zi;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
+  const l = (a, b, t) => a + (b - a) * t;
+  const c = (dx, dy, dz) => hash3(xi + dx, yi + dy, zi + dz);
+  return l(l(l(c(0, 0, 0), c(1, 0, 0), sx), l(c(0, 1, 0), c(1, 1, 0), sx), sy),
+           l(l(c(0, 0, 1), c(1, 0, 1), sx), l(c(0, 1, 1), c(1, 1, 1), sx), sy), sz) * 2 - 1;
+}
+// 骨の表面の凹凸(2026-10-05、Lead「まだ各パーツが機械っぽい」): 骨の層の全ての面の頂点を、面の向きに沿って押し出す。
+//   ゆるい凹凸(約 15 cm の波・振れ 1 cm)と細かい凹凸(約 4 cm の波・振れ 0.35 cm)。値は見た目の造形で、資料の値ではない。
+//   頂点の位置は世界の座標で揺らぎを引く(同じ形の椎骨でも置き場所が違えば凹凸が違う)。歩く動きの登録より前に呼ぶこと
+export function organify(root, opt = {}) {
+  const { amp = 0.010, freq = 6.5, fine = 0.0035, fineFreq = 26, skip = () => false } = opt;
+  root.updateMatrixWorld(true);
+  const done = new Set(), p = new THREE.Vector3(), n = new THREE.Vector3(), nm = new THREE.Matrix3(), inv = new THREE.Matrix4();
+  root.traverse((o) => {
+    if (!o.isMesh || skip(o) || done.has(o.geometry)) return;
+    const g = o.geometry; done.add(g);                            // 共有している形は 1 回だけ
+    if (!g.attributes.normal) g.computeVertexNormals();
+    const pa = g.attributes.position, na = g.attributes.normal;
+    nm.getNormalMatrix(o.matrixWorld); inv.copy(o.matrixWorld).invert();
+    for (let i = 0; i < pa.count; i++) {
+      p.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld);
+      n.fromBufferAttribute(na, i).applyMatrix3(nm).normalize();
+      const d = amp * vnoise(p.x * freq, p.y * freq, p.z * freq) + fine * vnoise(p.x * fineFreq + 17, p.y * fineFreq, p.z * fineFreq);
+      p.addScaledVector(n, d).applyMatrix4(inv);
+      pa.setXYZ(i, p.x, p.y, p.z);
+    }
+    pa.needsUpdate = true; g.computeVertexNormals();
+  });
 }

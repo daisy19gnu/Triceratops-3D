@@ -7,7 +7,7 @@ import { buildSkull, buildFrill } from "./tri-skull.js"; // 頭骨とフリル(�
 import { createRig } from "./tri-walk.js";              // 脚の関節と歩く動き
 import { buildRibcage } from "./tri-ribs.js";           // 肋骨・胸骨
 import { buildPelvis } from "./tri-pelvis.js";          // 骨盤・仙骨
-import { longBone, vertebra, digit } from "./tri-bones.js"; // 骨の形の部品(スキャンの観察から)
+import { longBone, vertebra, digit, organify } from "./tri-bones.js"; // 骨の形の部品(スキャンの観察から)
 
 // 肌の画像を読み込む。部品ごとに繰り返しの回数(repeat)を変えるため、同じ画像から複製を作る。
 // 読み終えたら onTexturesReady の呼び出し元へ知らせる(静止画の書き出しは、読み終えてから描く)。
@@ -307,7 +307,11 @@ export function buildTriceratops() {
       const f = Math.min(1, caudal / 22); caudal++;
       o = { spine: size * (1.8 - 1.4 * f), spineBack: 0.35, chevron: caudal >= 2 ? size * (2.2 - 1.9 * f) : 0 };
     }
-    skel.add(vertebra(p, tan, size, boneMat, o));
+    // 椎骨は一つずつ少しずつ違う(大きさ ±4%・棘突起 ±8%。造形)
+    const jit = (k) => Math.sin(i * 12.9898 + k * 78.233) * 43758.5453 % 1;
+    if (o.spine) o.spine *= 1 + 0.08 * jit(1);
+    const gap = i < NV - 1 ? p.distanceTo(curve.getPoint((i + 1) / (NV - 1))) : 0; if (gap > 0) o.len = 0.92 * gap;   // 隣の椎骨までの距離
+    skel.add(vertebra(p, tan, size * (1 + 0.04 * jit(2)), boneMat, o));
   }
   // 骨盤・仙骨(tri-pelvis.js。資料は docs/RESEARCH-pelvis-and-hindlimb.md)
   skel.add(buildPelvis({ bone: boneMat, boneDark }, { hip: new THREE.Vector3(-1.05, 2.10, 0.68), curve, tAtX }));
@@ -335,7 +339,7 @@ export function buildTriceratops() {
     if (front) {
       // 寸法は USNM の表(Gilmore 1905 / Hatcher ほか 1907 p.191)。軸の半径は周囲を断面の楕円(0.8)に当てた値
       // 上腕骨: 長さ 0.71・近い端の幅 0.40・遠い端の幅 0.36・軸の周囲 0.43 m。三角筋稜は上端から前内側の縁に沿って長さの約 2/3(HML1907)
-      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.17, r1: 0.18, shaft: 0.0755, flat: 0.75, hint: fwdHint,
+      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.17, r1: 0.18, shaft: 0.0755, flat: 0.75, hint: fwdHint, bow: 0.025,
         knobs: [{ u: 0.33, at: [-s * 0.03, 0.08], s: [0.045, 0.23, 0.07] }] }));
       // 尺骨: 長さ 0.65(肘頭を含む)・近い端の幅 0.38・遠い端の幅 0.19・軸の周囲 0.36 m。肘頭は橈骨の近い端よりずっと上へ突き出る(HML1907)
       //   肘頭の長さは表に無く、橈骨との差(0.65 - 0.45)から 0.2 m とした(推定)
@@ -348,7 +352,7 @@ export function buildTriceratops() {
       // 太さは USNM の寸法表(Gilmore 1905 / Hatcher ほか 1907 pp.191–192)による(2026-10-05。以前は見た目で決めた値で、関節が資料の 6 割ほどしかなかった)。
       // 大腿骨: 近い端の幅 0.42(骨頭と大転子を含む)・遠い端の幅 0.43・軸の周囲 0.485 m。骨頭は内上へ(長軸に対して約 45 度、Hatcher ほか 1907)、
       //   外に大転子、中ほどの後ろ内に第四転子。軸の半径 0.085 は周囲 0.485 を断面の楕円(前後/左右 0.8)に当てた値
-      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.16, r1: 0.215, shaft: 0.085, flat: 0.8, hint: fwdHint,
+      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.16, r1: 0.215, shaft: 0.085, flat: 0.8, hint: fwdHint, bow: 0.03,
         knobs: [{ u: 0.03, at: [-s * 0.14, 0], s: [0.09, 0.085, 0.09] }, { u: 0.06, at: [s * 0.10, 0.02], s: [0.07, 0.1, 0.08] },
                 { u: 0.42, at: [-s * 0.04, -0.08], s: [0.035, 0.13, 0.045] }] }));
       // 脛骨: 近い端の幅 0.395・遠い端の幅 0.39 m(同表)。軸の太さは表に無い(推定)。
@@ -446,6 +450,8 @@ export function buildTriceratops() {
     organs: [heartMat, lungMat, liverMat, gutMat], vessels: [artMat, veinMat], brain: [brainMat],
     skeleton: [boneMat, boneDark, hornMat, beakMat, eyeMat, toothMat, cartilageMat],
   };
+  // 骨の表面の凹凸(機械っぽさを減らす)。目・歯・軟骨は対象外
+  organify(skel, { skip: (o) => o.material === eyeMat || o.material === toothMat || o.material === cartilageMat });
   rig.attachBody(layers, { scapulae });   // 歩くときの全身の連動(胴・首・頭・尾。tri-walk.js の BODY)
   return { root, layers, layerMats, skin, skeleton: skel, jaws: [SK.jawPivot, SK.skinJawPivot], rig };
 }

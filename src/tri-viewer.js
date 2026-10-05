@@ -25,11 +25,18 @@ function setup(host, view, w, h, interactive) {
   scene.environmentIntensity = 0.45;    // 環境光が強いと骨が白く飛び、肌が褪せた(2026-10-04 実測)
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7f6a, 0.25));
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.8); sun.position.set(6, 10, 7); scene.add(sun);
+  // 影(2026-10-05、Lead「まだ各パーツが機械っぽい」): 骨の重なりと凹凸が立体に見えるよう、太陽の光で骨どうし・地面へ影を落とす
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+  Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 1, far: 30 }); sun.shadow.camera.updateProjectionMatrix();
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.22 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = 0.001; ground.receiveShadow = true; scene.add(ground);
   // 地面(1 m ごとの目盛り)
   const grid = new THREE.GridHelper(20, 20, 0xb8ad94, 0xd8cfba); scene.add(grid);
 
   const model = buildTriceratops();
   scene.add(model.root);
+  model.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   const LAYERS = ["skin", "muscle", "organs", "vessels", "brain", "skeleton"];
   const init = new Set(String(v.layers || (v.skin ? "skin" : "skeleton")).split(/\s+/));
   const state = { wire: !!v.wire };
