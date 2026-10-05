@@ -40,8 +40,7 @@ export function buildPelvis(mats, opt) {
     // 寛骨臼の上の柄(腸骨の外縁から股関節の上へ)と、寛骨臼の縁
     const zA = s * (hip.z - 0.08);
     g.add(rodBetween(new THREE.Vector3(hip.x, ilY, s * 0.50), new THREE.Vector3(hip.x, hip.y + 0.10, zA), 0.10, 0.08, mats.bone));
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.035, 8, 24), mats.boneDark);
-    rim.position.set(hip.x, hip.y, zA); g.add(rim);         // 輪の面は z を向く(外を向いた受け口)
+    // 寛骨臼の縁の輪は外した(宙に浮いた輪に見えた。大腿骨頭を tri-bones.js で付けたので受け口はそれで見える)
     // 坐骨: 寛骨臼の後ろ下から、下・後ろ・内へ一様な弧(長さ 約 1.50)。先は正中の近くで左右が出会う
     const isc = new THREE.CatmullRomCurve3([
       new THREE.Vector3(hip.x - 0.14, hip.y - 0.08, s * (hip.z - 0.12)),

@@ -15,7 +15,7 @@
 
 | 場所 | 中身 |
 |---|---|
-| `src/` | 模型(`tri-model.js`)、頭骨とフリル(`tri-skull.js`、標本写真から輪郭を読み取った)、肋骨と胸骨(`tri-ribs.js`)、骨盤と仙骨(`tri-pelvis.js`)、脚の関節と歩く動き(`tri-walk.js`)、実行部(`tri-viewer.js`) |
+| `src/` | 模型(`tri-model.js`)、頭骨とフリル(`tri-skull.js`、標本写真から輪郭を読み取った)、肋骨と胸骨(`tri-ribs.js`)、骨盤と仙骨(`tri-pelvis.js`)、骨の形の部品(`tri-bones.js`)、脚の関節と歩く動き(`tri-walk.js`)、実行部(`tri-viewer.js`) |
 | `tools/` | まとめと静止画の書き出し(`build.sh`)、肌の画像の埋め込み(`make-tex.py`)、写真との照合(`photo-compare.py`)、「回す」の確かめ(`check-grab.sh`) |
 | `textures/` | 肌の元画像 |
 | `ref/` | 照合に使う参照写真(Public domain) |

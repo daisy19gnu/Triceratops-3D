@@ -7,6 +7,7 @@ import { buildSkull, buildFrill } from "./tri-skull.js"; // 頭骨とフリル(�
 import { createRig } from "./tri-walk.js";              // 脚の関節と歩く動き
 import { buildRibcage } from "./tri-ribs.js";           // 肋骨・胸骨
 import { buildPelvis } from "./tri-pelvis.js";          // 骨盤・仙骨
+import { longBone, vertebra, digit } from "./tri-bones.js"; // 骨の形の部品(スキャンの観察から)
 
 // 肌の画像を読み込む。部品ごとに繰り返しの回数(repeat)を変えるため、同じ画像から複製を作る。
 // 読み終えたら onTexturesReady の呼び出し元へ知らせる(静止画の書き出しは、読み終えてから描く)。
@@ -55,6 +56,26 @@ function scaleTexture() {
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(4, 2);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// 化石の骨の色むら(明るさの揺らぎを重ねた画像)。ページの外(node での確かめ)では画像を作らない
+function fossilTexture(dark = 1) {
+  if (typeof document === "undefined") return null;
+  const N = 256, cv = document.createElement("canvas"); cv.width = cv.height = N;
+  const cx = cv.getContext("2d"), img = cx.createImageData(N, N);
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const oct = [16, 32, 64].map((n) => Array.from({ length: n * n }, rnd));
+  const val = (g, n, x, y) => { const xi = Math.floor(x * n) % n, yi = Math.floor(y * n) % n, fx = x * n % 1, fy = y * n % 1;
+    const a = g[yi * n + xi], b = g[yi * n + (xi + 1) % n], c = g[((yi + 1) % n) * n + xi], d = g[((yi + 1) % n) * n + (xi + 1) % n];
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy; };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const v = 0.55 * val(oct[0], 16, x / N, y / N) + 0.3 * val(oct[1], 32, x / N, y / N) + 0.15 * val(oct[2], 64, x / N, y / N);
+    const k = (0.78 + 0.32 * v) * dark, i = (y * N + x) * 4;
+    img.data[i] = 255 * Math.min(1, k); img.data[i + 1] = 245 * Math.min(1, k * 0.97); img.data[i + 2] = 230 * Math.min(1, k * 0.9); img.data[i + 3] = 255;
+  }
+  cx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 2); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
@@ -228,7 +249,8 @@ export function buildTriceratops() {
   const skinLimb = skinMaterial("belly", 3, 2);        // 脚の円柱・関節の球
   const skinHead = skinMaterial("head", 4, 2);         // 頭の楕円体
   const skinMatPlain = skinMaterial("head", 3, 2);     // フリル(uv は 0..1 の扇)
-  const boneMat = mat(BONE, { roughness: 0.6 }), boneDark = mat(BONE_DARK, { roughness: 0.6 });
+  // 骨: 一様な白ではなく、化石らしい色むら(組み立て骨格の写真の茶色の骨を参考に、明るめにした)。画像はページの中で作る
+  const boneMat = mat(BONE, { roughness: 0.82, map: fossilTexture() }), boneDark = mat(BONE_DARK, { roughness: 0.85, map: fossilTexture(0.8) });
   const hornMat = mat(HORN, { roughness: 0.5 }), beakMat = mat(BEAK, { roughness: 0.5 });
   const eyeMat = mat(0x1a1410, { roughness: 0.2 });
   const toothMat = mat(0xe6dcc4, { roughness: 0.35 });
@@ -262,14 +284,22 @@ export function buildTriceratops() {
   headBone.add(SK.bone);
   headBone.add(buildFrill(boneMat, { thick: 0.06 }));
   // 背骨(椎骨を並べる)と肋骨
-  const NV = 46;
+  //   2026-10-05 改: 細い円柱と棒をやめ、糸巻き形の椎体 + 板状の棘突起 + 横突起 + 尾の血道弓にした(スキャンの観察。tri-bones.js)。
+  //   区分は前後の位置で決める: 首(第 1 胴肋より前、棘突起は低い)・胴(横突起あり)・仙骨(腸骨の範囲)・尾(血道弓あり、先へ低く)
+  const NV = 46, xD1 = 1.30, xS0 = -0.30, xS1 = -1.80;
+  let caudal = 0;
   for (let i = 0; i < NV; i++) {
     const t = i / (NV - 1), p = curve.getPoint(t), tan = curve.getTangent(t);
     const size = 0.07 + 0.09 * Math.exp(-Math.pow((t - 0.35) / 0.3, 2)) - (t > 0.6 ? (t - 0.6) * 0.12 : 0);
-    const v = rod(p.clone().addScaledVector(tan, -0.05), p.clone().addScaledVector(tan, 0.05), size, size, boneMat, 10);
-    skel.add(v);
-    // 棘突起(背の上へ伸びる骨)
-    skel.add(rod(p, p.clone().add(new THREE.Vector3(0, size * 2.2, 0)), size * 0.35, size * 0.2, boneMat, 6));
+    let o;
+    if (p.x > xD1) o = { spine: size * 1.1, spineBack: 0.15 };                       // 首(フリルの下)
+    else if (p.x > xS0) o = { spine: size * 1.9, spineBack: 0.25, trans: size * 1.6 };   // 胴(3 倍では柵のように高すぎた)
+    else if (p.x > xS1) o = { spine: size * 1.7, spineBack: 0.05 };                  // 仙骨
+    else {                                                                          // 尾: 棘突起と血道弓は先へ向けて短く
+      const f = Math.min(1, caudal / 22); caudal++;
+      o = { spine: size * (1.8 - 1.4 * f), spineBack: 0.35, chevron: caudal >= 2 ? size * (2.2 - 1.9 * f) : 0 };
+    }
+    skel.add(vertebra(p, tan, size, boneMat, o));
   }
   // 骨盤・仙骨(tri-pelvis.js。資料は docs/RESEARCH-pelvis-and-hindlimb.md)
   skel.add(buildPelvis({ bone: boneMat, boneDark }, { hip: new THREE.Vector3(-1.05, 2.10, 0.68), curve, tAtX }));
@@ -280,32 +310,50 @@ export function buildTriceratops() {
   // 肩甲骨(後ろ上へ延びる板)・烏口骨。腸骨・坐骨・恥骨は tri-pelvis.js
   for (const s of [1, -1]) {
     // 肩甲骨は 54 度ほどに立て、下の端を関節窩(1.05, 1.55)へ届かせる(角竜類の肩甲骨は仙骨の長軸に対して約 55 度。SR2015)
-    const scapula = blob(new THREE.Vector3(0.66, 2.10, s * 0.66), new THREE.Vector3(0.62, 0.16, 0.055), boneMat, 32);
-    scapula.rotation.z = -0.95; skel.add(scapula);
+    // 肩甲骨: 平たい板。背側の端は幅広く、関節窩の側は厚く広がる(楕円の塊をやめた。スキャンの観察)
+    const scTop = new THREE.Vector3(0.66 - 0.62 * Math.cos(0.95), 2.10 + 0.62 * Math.sin(0.95), s * 0.62);
+    const scBot = new THREE.Vector3(0.66 + 0.62 * Math.cos(0.95), 2.10 - 0.62 * Math.sin(0.95), s * 0.68);
+    skel.add(longBone(scTop, scBot, boneMat, { r0: 0.2, r1: 0.16, shaft: 0.12, flat: 0.22, hint: new THREE.Vector3(0, 0, s) }));
     skel.add(blob(new THREE.Vector3(1.15, 1.62, s * 0.64), new THREE.Vector3(0.23, 0.20, 0.07), boneMat, 24));
   }
-  // 四肢の骨と指
+  // 四肢の骨と指(2026-10-05 改: 両端が広がる長い骨・突起・糸巻き形の趾骨と蹄。関節の暗い球は外した。tri-bones.js)
+  const fwdHint = new THREE.Vector3(1, 0, 0);
   for (const front of [true, false]) for (const s of [1, -1]) {
     const P = legPoints(front, s), c = rig.leg(front, s, P).chain(skel);
-    const r = front ? [0.11, 0.08, 0.07] : [0.14, 0.1, 0.08];
-    for (let i = 0; i < 3; i++) {
-      if (i === 1) {   // 前腕(橈骨・尺骨)・下腿(脛骨・腓骨)は 2 本の骨
-        const offset = new THREE.Vector3(-0.055, 0, s * 0.055);
-        c.put(1, rod(P[i].clone().sub(offset), P[i + 1].clone().sub(offset), r[i] * 0.72, r[i] * 0.58, boneMat, 16));
-        c.put(1, rod(P[i].clone().add(offset), P[i + 1].clone().add(offset), r[i] * (front ? 0.85 : 0.45), r[i] * (front ? 0.65 : 0.35), boneMat, 16));
-      } else {
-        c.put(i, rod(P[i], P[i + 1], r[i], r[i] * 0.8, boneMat, 16));
-      }
-      c.put(i, blob(P[i], new THREE.Vector3(r[i] * 1.4, r[i] * 1.4, r[i] * 1.4), boneDark, 12));
+    // 局所の +X は体の外(右 s=+1 で +z)になるように基底を取る(longBone の hint = 前)。内 = -s
+    if (front) {
+      // 上腕骨: 両端が大きく広がり、近い側の前に大きな三角筋稜
+      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.13, r1: 0.12, shaft: 0.06, flat: 0.75, hint: fwdHint,
+        knobs: [{ u: 0.3, at: [0, 0.07], s: [0.035, 0.2, 0.06] }] }));
+      // 尺骨(後ろ、上端に肘頭)と橈骨(前、細い)
+      const off = new THREE.Vector3(0.05, 0, 0);
+      c.put(1, longBone(P[1].clone().sub(off), P[2].clone().sub(off), boneMat, { r0: 0.1, r1: 0.075, shaft: 0.05, flat: 0.8, hint: fwdHint,
+        knobs: [{ u: 0.02, at: [0, -0.05], s: [0.06, 0.08, 0.06] }] }));
+      c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off), boneMat, { r0: 0.06, r1: 0.07, shaft: 0.035, flat: 0.85, hint: fwdHint }));
+    } else {
+      // 大腿骨: 内上へ向く骨頭(長軸に対して約 45 度、Hatcher ほか 1907)、外の大転子、中ほどの後ろ内に第四転子
+      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.12, r1: 0.14, shaft: 0.075, flat: 0.8, hint: fwdHint,
+        knobs: [{ u: 0.03, at: [-s * 0.12, 0], s: [0.09, 0.08, 0.09] }, { u: 0.06, at: [s * 0.07, 0.02], s: [0.05, 0.09, 0.07] },
+                { u: 0.42, at: [-s * 0.03, -0.07], s: [0.03, 0.12, 0.04] }] }));
+      // 脛骨(太い)と腓骨(細い。外側)
+      const off = new THREE.Vector3(0, 0, s * 0.07);
+      c.put(1, longBone(P[1].clone().sub(off.clone().multiplyScalar(0.3)), P[2], boneMat, { r0: 0.13, r1: 0.11, shaft: 0.06, flat: 0.8, hint: fwdHint }));
+      c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off), boneMat, { r0: 0.045, r1: 0.055, shaft: 0.025, flat: 0.8, hint: fwdHint }));
     }
-    const toes = front ? 5 : 4;         // 前あし 5 本、後ろあし 4 本
-    for (let k = 0; k < toes; k++) {
-      // 指は基部を分散させ、前あしの外側の 2 本を短くする(初期案。手根・中手骨は未)
-      const ang = front ? [-0.25, 0.0, 0.30, 0.80, 1.15][k] : [-0.30, -0.10, 0.12, 0.34][k];
-      const len = front ? [0.22, 0.27, 0.25, 0.15, 0.10][k] : [0.22, 0.28, 0.28, 0.23][k];
-      const base = new THREE.Vector3(P[3].x, 0.12, P[3].z + s * (k - (toes - 1) / 2) * 0.065);
-      const tip = base.clone().add(new THREE.Vector3(Math.cos(ang) * len, -0.06, s * Math.sin(ang) * len));
-      c.put(2, rod(base, tip, 0.035, 0.025, boneMat, 12));
+    // 手・足: 中手骨/中足骨を横に並べ、先に趾(趾骨の数: 後ろ 2-3-4-5 で I〜IV(Brown 1917 ほか)、前 2-3-4-3-1(出典は未確認)。末節骨は蹄)
+    const n = front ? 5 : 4;
+    const phal = front ? [[0.06, 0.07], [0.06, 0.05, 0.08], [0.05, 0.05, 0.05, 0.08], [0.04, 0.035, 0.04], [0.04]]
+                       : [[0.09, 0.12], [0.09, 0.07, 0.13], [0.08, 0.065, 0.055, 0.12], [0.06, 0.05, 0.045, 0.04, 0.08]];
+    for (let k = 0; k < n; k++) {
+      const spread = (k - (n - 1) / 2) * (front ? 0.07 : 0.085);
+      const mlen = front ? [0.85, 1.0, 1.0, 0.85, 0.6][k] : [0.75, 0.92, 1.0, 0.85][k];   // 後ろは III > II > IV > I(Brown 1917 ほか)
+      const top = P[2].clone().add(new THREE.Vector3(0, 0, s * spread * 0.5));
+      const bot = P[2].clone().lerp(P[3], mlen).add(new THREE.Vector3(0, 0, s * spread));
+      c.put(2, longBone(top, bot, boneMat, { r0: 0.045, r1: 0.04, shaft: 0.025, flat: 0.75, hint: fwdHint }));
+      const ang = (front ? [-0.35, -0.1, 0.15, 0.45, 0.8] : [-0.35, -0.12, 0.1, 0.32])[k];
+      const dir = new THREE.Vector3(Math.cos(ang), -0.25, s * Math.sin(ang));
+      const width = front ? [0.05, 0.055, 0.05, 0.035, 0.03][k] : [0.06, 0.07, 0.065, 0.05][k];
+      c.put(2, digit(bot, dir, phal[k], width, boneMat));
     }
   }
   // ── 筋肉(推定。骨に残る付着の跡と、現生の鳥・ワニの体から推定される配置を、形を単純にして表す)────
@@ -414,6 +462,9 @@ export const VIEWS = {
   chk_walkscan: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walkScan: 40 },
   chk_walk_skin: { pos: [6.5, 2.6, -8.5], target: [0, 1.3, 0], layers: "skin", wire: 0, walk: 0.4 },
   // 肋骨・胸骨・前あしの確かめ(骨格だけ)。chk_ribs_* は肋骨が皮膚の外へ出た量を document.title へ出す(ribCheck)
+  chk_bones_hind:  { pos: [-0.9, 1.2, 3.2], target: [-0.9, 1.0, 0], layers: "skeleton", wire: 0 },
+  chk_bones_front: { pos: [1.0, 1.0, 3.0], target: [0.9, 0.8, 0], layers: "skeleton", wire: 0 },
+  chk_bones_tail:  { pos: [-2.6, 1.8, 3.2], target: [-2.6, 1.4, 0], layers: "skeleton", wire: 0 },
   chk_pelvis_side: { pos: [-1.0, 1.5, 6.0], target: [-1.0, 1.4, 0], layers: "skeleton", wire: 0 },
   chk_pelvis_back: { pos: [-6.0, 2.4, 2.5], target: [-1.0, 1.6, 0], layers: "skeleton", wire: 0 },
   chk_pelvis_top:  { pos: [-1.0, 7.5, 0.01], target: [-1.0, 1.8, 0], layers: "skeleton", wire: 0 },
