@@ -204,17 +204,24 @@ function legPoints(front, side) {
   //   柱の脚で、資料の角度と合わなかった(横から見た水平からの下がり 74.6 度 / 資料 10〜43 度、正面から見た外への開き 13.1 度 / 32〜68 度)。
   //   上腕骨: 横から見て水平から 35 度下がり、上から見て 25 度外へ開き、後ろへ向く(資料の範囲の中ほど。姿勢は議論が分かれる)。
   //   関節窩は低く(1.55)、手は肩の下へ寄せる(Paul & Christiansen 2000 の要旨「手は肩関節の真下」)。
+  //   2026-10-05 改: 前あしの骨の長さを USNM の組み立て骨格の表に合わせた(上腕骨 0.71・橈骨 0.41・尺骨 0.65 m、Gilmore 1905 /
+  //   Hatcher ほか 1907 p.191。資料 docs/RESEARCH-forelimb.md)。以前は上腕骨 0.85・肘から手首 0.91 m で、前腕が倍以上あった。
+  //   肘から手首は橈骨 0.41 m に関節の分を足して 0.45 m とした(推定)。正しい長さにすると関節窩は 1.55 → 約 1.16 m に下がる
+  //   (「肩は腰より低い」HML1907)。上腕骨は横から見て水平から 50 度下がる: TH2007 の 8 姿勢(10〜43 度)より立てた。
+  //   43 度以下では関節窩が胸の床(胸骨)より低くなり、胴に収まらないため(当方の判断)。上から見た外への開き 25 度は TH2007 の範囲。
+  const deg = Math.PI / 180;
   if (front) {
-    const sh = new THREE.Vector3(1.05, 1.55, z);
-    const L1 = 0.85, dir = new THREE.Vector3(-1, -Math.tan(35 * Math.PI / 180), side * Math.tan(25 * Math.PI / 180)).normalize();
-    const elbow = sh.clone().addScaledVector(dir, L1);
-    return [sh, elbow, new THREE.Vector3(0.80, 0.28, side * 0.70), new THREE.Vector3(0.92, 0.08, side * 0.72)];
+    const sh = new THREE.Vector3(1.05, 1.16, z);
+    const dir = new THREE.Vector3(-1, -Math.tan(50 * deg), side * Math.tan(25 * deg)).normalize();
+    const elbow = sh.clone().addScaledVector(dir, 0.71);
+    const wrist = elbow.clone().add(new THREE.Vector3(0.45 * Math.sin(15 * deg), -0.45 * Math.cos(15 * deg), -side * 0.06));   // 前腕は前へ 15 度
+    return [sh, elbow, wrist, new THREE.Vector3(wrist.x + 0.10, 0.05, wrist.z + side * 0.02)];
   }
   //   2026-10-04 改: 後ろあしの骨の長さを USNM の組み立て骨格に合わせた(大腿骨 1.15・脛骨 0.72・中足骨 III 0.355 m、Gilmore 1905。
   //   脛骨/大腿骨 = 0.63。資料により 0.59〜0.66)。以前は 1.00 : 0.76 : 0.49 で、脛骨と足が長すぎた。
   //   姿勢は「ほぼまっすぐ、膝はわずかに曲げる」(Lull 1933)、足は趾行で中足骨を立てる(Brown 1917)。股関節の高さ 2.10 に合わせると、
   //   大腿骨は前へ 15 度、脛骨は後ろへ 12 度、中足骨は水平から 55 度になる(角度は資料に数値が無く、長さと高さから決めた)。
-  const deg = Math.PI / 180, hip = new THREE.Vector3(-1.05, 2.10, z);
+  const hip = new THREE.Vector3(-1.05, 2.10, z);
   const knee = hip.clone().add(new THREE.Vector3(1.15 * Math.sin(15 * deg), -1.15 * Math.cos(15 * deg), 0));
   const ankle = knee.clone().add(new THREE.Vector3(-0.72 * Math.sin(12 * deg), -0.72 * Math.cos(12 * deg), 0));
   const mtp = ankle.clone().add(new THREE.Vector3(0.355 * Math.cos(55 * deg), -0.355 * Math.sin(55 * deg), 0));
@@ -306,17 +313,19 @@ export function buildTriceratops() {
   skel.add(buildPelvis({ bone: boneMat, boneDark }, { hip: new THREE.Vector3(-1.05, 2.10, 0.68), curve, tAtX }));
   // 肋骨・胸骨(tri-ribs.js。資料は docs/RESEARCH-ribcage-and-sternum.md)
   const cartilageMat = mat(0xcfd8d4, { roughness: 0.4, transparent: true, opacity: 0.55 });
-  skel.add(buildRibcage(curve, { bone: boneMat, cartilage: cartilageMat }, { bodyProf, bodyDown, tAtX, headX: 3.05 + HEAD.x, coracoid: [1.15, 1.62, 0.64] }));
+  skel.add(buildRibcage(curve, { bone: boneMat, cartilage: cartilageMat }, { bodyProf, bodyDown, tAtX, headX: 3.05 + HEAD.x, coracoid: [1.16, 1.06, 0.58] }));
   // 肩甲骨・骨盤
   // 肩甲骨(後ろ上へ延びる板)・烏口骨。腸骨・坐骨・恥骨は tri-pelvis.js
   for (const s of [1, -1]) {
     // 肩甲骨は 54 度ほどに立て、下の端を関節窩(1.05, 1.55)へ届かせる(角竜類の肩甲骨は仙骨の長軸に対して約 55 度。SR2015)
     // 肩甲骨: 平たい板。背側の端は幅広く、関節窩の側は厚く広がる(楕円の塊をやめた。スキャンの観察)
-    const scTop = new THREE.Vector3(0.66 - 0.62 * Math.cos(0.95), 2.10 + 0.62 * Math.sin(0.95), s * 0.62);
-    const scBot = new THREE.Vector3(0.66 + 0.62 * Math.cos(0.95), 2.10 - 0.62 * Math.sin(0.95), s * 0.68);
-    const scap = longBone(scTop, scBot, boneMat, { r0: 0.2, r1: 0.16, shaft: 0.12, flat: 0.22, hint: new THREE.Vector3(0, 0, s) });
+    // 2026-10-05 改: 長さ 0.97・上端の幅 0.26・最大の幅(関節窩の上)0.36 m(USNM、Gilmore 1905)。下の端を関節窩(1.05, 1.16)の上へ、
+    //   約 56 度に立てる(角竜類の肩甲骨は仙骨の長軸に対して約 55 度、SR2015)。刃の最小の幅は Triceratops の値が無く、Vagaceratops の比で代用
+    const scBot = new THREE.Vector3(1.02, 1.24, s * 0.66), scTop = scBot.clone().add(new THREE.Vector3(-0.97 * Math.cos(56 * Math.PI / 180), 0.97 * Math.sin(56 * Math.PI / 180), -s * 0.04));
+    const scap = longBone(scTop, scBot, boneMat, { r0: 0.13, r1: 0.18, shaft: 0.072, flat: 0.22, hint: new THREE.Vector3(0, 0, s) });
     scap.name = "scapula-" + (s > 0 ? "R" : "L"); skel.add(scap); scapulae.push({ obj: scap, key: (s > 0 ? "R" : "L") + "F" });
-    skel.add(blob(new THREE.Vector3(1.15, 1.62, s * 0.64), new THREE.Vector3(0.23, 0.20, 0.07), boneMat, 24));
+    // 烏口骨: 長さ 0.38・幅 0.39 m、前縁と下縁で半円を描き内へ曲がる(USNM、Hatcher ほか 1907)。関節窩の前下
+    const cor = blob(new THREE.Vector3(1.16, 1.06, s * 0.58), new THREE.Vector3(0.19, 0.195, 0.05), boneMat, 24); cor.rotation.y = s * 0.35; skel.add(cor);
   }
   // 四肢の骨と指(2026-10-05 改: 両端が広がる長い骨・突起・糸巻き形の趾骨と蹄。関節の暗い球は外した。tri-bones.js)
   const fwdHint = new THREE.Vector3(1, 0, 0);
@@ -324,14 +333,17 @@ export function buildTriceratops() {
     const P = legPoints(front, s), c = rig.leg(front, s, P).chain(skel);
     // 局所の +X は体の外(右 s=+1 で +z)になるように基底を取る(longBone の hint = 前)。内 = -s
     if (front) {
-      // 上腕骨: 両端が大きく広がり、近い側の前に大きな三角筋稜
-      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.13, r1: 0.12, shaft: 0.06, flat: 0.75, hint: fwdHint,
-        knobs: [{ u: 0.3, at: [0, 0.07], s: [0.035, 0.2, 0.06] }] }));
-      // 尺骨(後ろ、上端に肘頭)と橈骨(前、細い)
-      const off = new THREE.Vector3(0.05, 0, 0);
-      c.put(1, longBone(P[1].clone().sub(off), P[2].clone().sub(off), boneMat, { r0: 0.1, r1: 0.075, shaft: 0.05, flat: 0.8, hint: fwdHint,
-        knobs: [{ u: 0.02, at: [0, -0.05], s: [0.06, 0.08, 0.06] }] }));
-      c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off), boneMat, { r0: 0.06, r1: 0.07, shaft: 0.035, flat: 0.85, hint: fwdHint }));
+      // 寸法は USNM の表(Gilmore 1905 / Hatcher ほか 1907 p.191)。軸の半径は周囲を断面の楕円(0.8)に当てた値
+      // 上腕骨: 長さ 0.71・近い端の幅 0.40・遠い端の幅 0.36・軸の周囲 0.43 m。三角筋稜は上端から前内側の縁に沿って長さの約 2/3(HML1907)
+      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.17, r1: 0.18, shaft: 0.0755, flat: 0.75, hint: fwdHint,
+        knobs: [{ u: 0.33, at: [-s * 0.03, 0.08], s: [0.045, 0.23, 0.07] }] }));
+      // 尺骨: 長さ 0.65(肘頭を含む)・近い端の幅 0.38・遠い端の幅 0.19・軸の周囲 0.36 m。肘頭は橈骨の近い端よりずっと上へ突き出る(HML1907)
+      //   肘頭の長さは表に無く、橈骨との差(0.65 - 0.45)から 0.2 m とした(推定)
+      const fdir = P[2].clone().sub(P[1]).normalize(), back = new THREE.Vector3(-0.06, 0, 0);
+      c.put(1, longBone(P[1].clone().addScaledVector(fdir, -0.2).add(back), P[2].clone().add(back), boneMat, { r0: 0.19, r1: 0.095, shaft: 0.063, flat: 0.75, hint: fwdHint }));
+      // 橈骨: 長さ 0.41・近い端の幅 0.18・遠い端の幅 0.14・軸の周囲 0.205 m(軸は断面がほぼ円で全長ほぼ一様、HML1907)
+      const fwd2 = new THREE.Vector3(0.06, 0, 0);
+      c.put(1, longBone(P[1].clone().add(fwd2), P[2].clone().add(fwd2), boneMat, { r0: 0.09, r1: 0.07, shaft: 0.036, flat: 0.95, hint: fwdHint }));
     } else {
       // 太さは USNM の寸法表(Gilmore 1905 / Hatcher ほか 1907 pp.191–192)による(2026-10-05。以前は見た目で決めた値で、関節が資料の 6 割ほどしかなかった)。
       // 大腿骨: 近い端の幅 0.42(骨頭と大転子を含む)・遠い端の幅 0.43・軸の周囲 0.485 m。骨頭は内上へ(長軸に対して約 45 度、Hatcher ほか 1907)、
@@ -345,20 +357,22 @@ export function buildTriceratops() {
       c.put(1, longBone(P[1].clone().sub(off.clone().multiplyScalar(0.25)), P[2], boneMat, { r0: 0.1975, r1: 0.195, shaft: 0.075, flat: 0.8, hint: fwdHint }));
       c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off.clone().multiplyScalar(0.5)), boneMat, { r0: 0.06, r1: 0.07, shaft: 0.03, flat: 0.75, hint: fwdHint }));
     }
-    // 手・足: 中手骨/中足骨を横に並べ、先に趾(趾骨の数: 後ろ 2-3-4-5 で I〜IV(Brown 1917 ほか)、前 2-3-4-3-1(出典は未確認)。末節骨は蹄)
+    // 手・足: 中手骨/中足骨を横に並べ、先に趾。後ろは趾骨の式 2-3-4-5 で I〜IV(Brown 1917 ほか)。前は 2-3-4-3-2、蹄は第 1〜3 指だけ
+    //   (Centrosaurus・Vagaceratops、Brown 1917・Lull 1933・Holmes 2014。Triceratops の手の寸法は資料に無く、中手骨の長さは
+    //   Centrosaurus AMNH 5351 を上腕骨の比 0.71 / 0.60 で写した。種が違う)
     const n = front ? 5 : 4;
-    const phal = front ? [[0.06, 0.07], [0.06, 0.05, 0.08], [0.05, 0.05, 0.05, 0.08], [0.04, 0.035, 0.04], [0.04]]
+    const phal = front ? [[0.06, 0.07], [0.06, 0.05, 0.08], [0.05, 0.045, 0.04, 0.08], [0.04, 0.035, 0.03], [0.035, 0.03]]
                        : [[0.09, 0.12], [0.09, 0.07, 0.13], [0.08, 0.065, 0.055, 0.12], [0.06, 0.05, 0.045, 0.04, 0.11]];   // 第 III 趾 計 0.32、第 IV 趾の蹄 0.11(USNM: 0.325 / 0.11)
     for (let k = 0; k < n; k++) {
       const spread = (k - (n - 1) / 2) * (front ? 0.07 : 0.085);
-      const mlen = front ? [0.85, 1.0, 1.0, 0.85, 0.6][k] : [0.70, 0.82, 1.0, 0.85][k];   // 後ろは III > II > IV > I(Brown 1917 ほか)。II/III = 0.29/0.355(USNM)、I と IV は推定
+      const mlen = front ? [0.098, 0.150, 0.153, 0.117, 0.094][k] / P[2].distanceTo(P[3]) : [0.70, 0.82, 1.0, 0.85][k];   // 後ろは III > II > IV > I(Brown 1917 ほか)。II/III = 0.29/0.355(USNM)、I と IV は推定
       const top = P[2].clone().add(new THREE.Vector3(0, 0, s * spread * 0.5));
       const bot = P[2].clone().lerp(P[3], mlen).add(new THREE.Vector3(0, 0, s * spread));
       c.put(2, longBone(top, bot, boneMat, { r0: front ? 0.045 : 0.06, r1: front ? 0.04 : 0.055, shaft: front ? 0.025 : 0.035, flat: 0.75, hint: fwdHint }));   // 太さは推定
       const ang = (front ? [-0.35, -0.1, 0.15, 0.45, 0.8] : [-0.35, -0.12, 0.1, 0.32])[k];
       const dir = new THREE.Vector3(Math.cos(ang), -0.25, s * Math.sin(ang));
       const width = front ? [0.05, 0.055, 0.05, 0.035, 0.03][k] : [0.06, 0.07, 0.065, 0.05][k];
-      c.put(2, digit(bot, dir, phal[k], width, boneMat));
+      c.put(2, digit(bot, dir, phal[k], width, boneMat, !front || k < 3));   // 前の第 4・5 指は蹄の無い小さく丸い節
     }
   }
   // ── 筋肉(推定。骨に残る付着の跡と、現生の鳥・ワニの体から推定される配置を、形を単純にして表す)────

@@ -98,12 +98,12 @@ export function vertebra(p, tan, size, mat, opt = {}) {
 }
 
 // 趾: 短い糸巻き形の趾骨をつなぎ、先に平たく丸い蹄(末節骨)を付ける
-export function digit(base, dir, lengths, width, mat) {
+export function digit(base, dir, lengths, width, mat, hoofed = true) {
   const g = new THREE.Group(); let p = base.clone();
   const d = dir.clone().normalize();
   lengths.forEach((L, i) => {
     const q = p.clone().addScaledVector(d, L), last = i === lengths.length - 1;
-    if (!last) g.add(longBone(p, q, mat, { r0: width * 0.62, r1: width * 0.55, shaft: width * 0.4, flat: 0.7, hint: new THREE.Vector3(0, 1, 0) }));
+    if (!last || !hoofed) g.add(longBone(p, q, mat, { r0: width * 0.62, r1: width * 0.55, shaft: width * 0.4, flat: 0.7, hint: new THREE.Vector3(0, 1, 0) }));
     else {
       // 平たく幅広い蹄(鋤の形。Hatcher ほか 1907、Lull 1933)。上が丸く下が平たい半球を、地面に平らに置き、趾の向きへ伸ばす
       const hoof = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), mat);
