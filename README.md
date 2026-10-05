@@ -9,7 +9,8 @@
 骨格は化石の資料にもとづいていますが、**筋肉・内臓・血管・皮膚の色、歩き方は推定**です。何にもとづいたか、何を推定したかは
 [docs/MODEL-NOTES.md](docs/MODEL-NOTES.md)、調べた資料は [docs/RESEARCH-skull-and-locomotion.md](docs/RESEARCH-skull-and-locomotion.md)(頭骨・歩き方)と
 [docs/RESEARCH-ribcage-and-sternum.md](docs/RESEARCH-ribcage-and-sternum.md)(肋骨・胸骨)、
-[docs/RESEARCH-pelvis-and-hindlimb.md](docs/RESEARCH-pelvis-and-hindlimb.md)(骨盤・後ろあし)にあります。
+[docs/RESEARCH-pelvis-and-hindlimb.md](docs/RESEARCH-pelvis-and-hindlimb.md)(骨盤・後ろあし)、
+[docs/RESEARCH-whole-body-gait.md](docs/RESEARCH-whole-body-gait.md)(歩くときの全身の連動)にあります。
 
 ## 置き場
 

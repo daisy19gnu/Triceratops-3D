@@ -93,24 +93,32 @@ function setup(host, view, w, h, interactive) {
     const n = v.walkScan, wp = new THREE.Vector3(), out = {};
     for (const L of rig.legs) out[L.key] = { maxSlip: 0, maxDev: 0, clamped: 0, stanceN: 0 };
     let prev = null;
+    // 全身の連動が実際に動いているかの対照: 頭の上下の幅・尾の先の左右の幅・胴(肩甲骨)の上下の幅
+    const head = model.root.getObjectByName("head-offset"), tailIt = (rig.bodyItems || []).filter((it) => it.kind === "rigid").sort((a, b) => a.c.x - b.c.x)[0];
+    const scap = model.root.getObjectByName("scapula-R"), rng = { headY: [1e9, -1e9], tailZ: [1e9, -1e9], trunkY: [1e9, -1e9] };
+    const upd = (r, v) => { r[0] = Math.min(r[0], v); r[1] = Math.max(r[1], v); };
     for (let k = 0; k <= n; k++) {
       rig.pose((k / n) * rig.period()); model.root.updateMatrixWorld(true);
+      if (head) upd(rng.headY, head.getWorldPosition(new THREE.Vector3()).y);
+      if (tailIt) upd(rng.tailZ, tailIt.obj.getWorldPosition(new THREE.Vector3()).z);
+      if (scap) upd(rng.trunkY, scap.getWorldPosition(new THREE.Vector3()).y);
       const cur = {};
       for (const L of rig.legs) {
-        const phi = ((k / n + { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 }[L.key]) % 1);
+        const phi = (((k / n - { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 }[L.key]) % 1) + 1) % 1;   // tri-walk.js と同じ向き(全体 - 着地の時刻)
         const p = L.chains[0].tip.getWorldPosition(wp).clone(); cur[L.key] = p;
         if (L.clamped) out[L.key].clamped++;
         if (phi < 0.6) {           // 着いている間(duty 0.62 の内側)
           const o = out[L.key]; o.stanceN++;
           o.maxDev = Math.max(o.maxDev, Math.abs(p.y - L.P[3].y));
           // 胴に対するつま先の後ろへの動きが、目盛りの流れ(速さ × 時間)と同じなら、地面の上で滑っていない
-          if (prev && ((k - 1) / n + { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 }[L.key]) % 1 < 0.6)
+          if (prev && ((((k - 1) / n - { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 }[L.key]) % 1) + 1) % 1 < 0.6)
             o.maxSlip = Math.max(o.maxSlip, Math.abs((p.x - prev[L.key].x) + rig.speed() * rig.period() / n));
         }
       }
       prev = cur;
     }
     for (const k in out) for (const f of ["maxSlip", "maxDev"]) out[k][f] = +out[k][f].toFixed(4);
+    out.body = Object.fromEntries(Object.entries(rng).map(([k, r]) => [k, +(r[1] - r[0]).toFixed(3)]));   // 幅(m)
     window.__TRI_WALKSCAN = out; document.title = "TRI_WALKSCAN " + JSON.stringify(out);
     rig.pose(null);
   }

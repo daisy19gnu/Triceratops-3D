@@ -24,6 +24,24 @@ export const GAIT = {
   lift: 0.16,                     // 振り出すときに足を持ち上げる高さ(m、仮定)
   phase: { LH: 0, LF: 0.25, RH: 0.5, RF: 0.75 },   // 足の運びの順序(仮定)
 };
+// 歩くときの全身の連動(2026-10-05、Lead「足だけで歩いている。連動して他の骨も動くはず。ワニや鳥からの推測でも構わない」)。
+//   資料: docs/RESEARCH-whole-body-gait.md。トリケラトプスの全身の歩きを測った資料は無いので、値はすべて現生動物からの推定。
+export const BODY = {
+  bob: 0.015,          // 胴の上下の片側の振れ(m。上下の幅 3 cm)。1 周期に 2 回。ゾウで最大 3 cm 未満(Ge2010)
+  // 前半身と後半身は別々の振り子として上下する(Gr2004)。それぞれ、その脚が着いている間の中ほど(脚が立つとき)に最も高い。
+  //   前の脚は同じ側の後ろの脚より周期の 25% 遅れて着くので、前後の上下は打ち消し合い、差が前後の傾きになる(Gr2004、Hu2006)。
+  //   全体としての重心は、同じ側の前後の脚がそろって立つとき最も高い(ゾウ、Ge2010)ことと整合する
+  roll: 2.0,           // 左右の傾き(度)。ワニは 7.6〜10°(Ba2018 ほか)だが、角竜類は背の骨化腱で胴が硬い(推定)
+  shift: 0.03,         // 左右へのずれ(m)。支える側へ寄る。距離の値は資料に無い(推定)
+  yaw: 1.5,            // 胴の左右の振れ(度)。背骨は曲げず胴を 1 つの塊として振る(TH2007「ほとんど横に曲がらず、わずかによたよた歩き」。角度は推定)
+  tail: 0.20,          // 尾の先の左右の片側の揺れ(m)。骨化腱は仙骨で終わり尾は曲がりやすい(He2015)。振れ幅の値はどの動物でも無い(推定)
+  tailLag: 0.6,        // 尾の付け根から先までの遅れ(周期に対する割合。推定)
+  headKeep: 0.0,       // 頭は胴と同じように動く(首の短い四足動物は頭を胸と同じ位相で動かす、Lo2016。角竜類は首が短い)
+  nod: 0.0,            // 胴と逆向きのうなずきは入れない(入れる根拠が見つからなかった)
+  scapula: 0.30,       // 上腕骨の振りに対する肩甲骨の回りの割合。ワニでは肩帯の動きが前肢の動きの約 30%(BG2013、Ba2018)。角竜類の量は不明(TH2007)
+  xTail: -1.8, tailLen: 1.9, xNeck: 1.6, xMid: 0.0, yMid: 1.8,
+};
+
 export const alexanderSpeed = (s, h, g = 9.81) => 0.25 * Math.sqrt(g) * Math.pow(s, 1.67) * Math.pow(h, -1.17);
 
 const ang = (v) => Math.atan2(v.y, v.x);
@@ -61,27 +79,106 @@ export function createRig() {
       legs.push(L);
       return L;
     },
+    // 全身の連動に使う部品を登録する(各層の直下の部品。脚の関節の組は別に扱う)
+    attachBody(layers, extra = {}) {
+      const items = [], box = new THREE.Box3(), c = new THREE.Vector3(), sz = new THREE.Vector3();
+      for (const layer of Object.values(layers)) {
+        layer.updateMatrixWorld(true);
+        for (const obj of layer.children) {
+          if (/-joint0$/.test(obj.name)) { items.push({ kind: "leg", obj, base: obj.position.clone() }); continue; }
+          box.setFromObject(obj); if (box.isEmpty()) continue;
+          box.getCenter(c); box.getSize(sz);
+          const it = { obj, base: obj.position.clone(), baseQ: obj.quaternion.clone(), c: c.clone() };
+          // 長い部品(胴の皮膚・筋肉・腸・血管など)は頂点ごとにずらす。回転の無い Mesh に限る
+          if (obj.isMesh && sz.x > 1.0 && obj.quaternion.equals(new THREE.Quaternion())) {
+            const pa = obj.geometry.attributes.position;
+            items.push({ ...it, kind: "deform", basePos: Float32Array.from(pa.array), scale: obj.scale.clone() });
+          } else items.push({ ...it, kind: "rigid" });
+        }
+      }
+      rig.bodyItems = items;
+      rig.scapulae = extra.scapulae || [];
+      for (const sc of rig.scapulae) sc.baseQ = sc.obj.quaternion.clone();
+    },
     hipHeight() { const h = legs.find((l) => !l.front); return h ? h.P[0].y : 2.0; },
     stride() { return GAIT.relStride * rig.hipHeight(); },
     speed() { return alexanderSpeed(rig.stride(), rig.hipHeight()); },
     period() { return rig.stride() / rig.speed(); },
     // 時刻 t(秒)の姿勢にする。t = null で静止の姿勢へ戻す
     pose(t) {
+      const F = t === null ? null : bodyField(((t / rig.period()) % 1 + 1) % 1);
+      // 胴・首・頭・尾(体の動きの場で動かす)
+      for (const it of rig.bodyItems || []) {
+        if (it.kind === "leg") continue;
+        if (it.kind === "rigid") {
+          if (!F) { it.obj.position.copy(it.base); continue; }
+          const d = F(it.c.x, it.c.y, it.c.z); it.obj.position.copy(it.base).add(d);
+        } else {
+          const pa = it.obj.geometry.attributes.position, bp = it.basePos, sc = it.scale, op = it.obj.position;
+          if (!F) { pa.array.set(bp); pa.needsUpdate = true; continue; }
+          for (let i = 0; i < pa.count; i++) {
+            const x = bp[i * 3] * sc.x + op.x, y = bp[i * 3 + 1] * sc.y + op.y, z = bp[i * 3 + 2] * sc.z + op.z;
+            const d = F(x, y, z);
+            pa.array[i * 3] = bp[i * 3] + d.x / sc.x; pa.array[i * 3 + 1] = bp[i * 3 + 1] + d.y / sc.y; pa.array[i * 3 + 2] = bp[i * 3 + 2] + d.z / sc.z;
+          }
+          pa.needsUpdate = true;
+        }
+      }
       for (const L of legs) {
-        if (t === null) { for (const c of L.chains) c.j.forEach((g) => { g.rotation.z = 0; }); L.clamped = false; continue; }
-        const phi = ((t / rig.period() + GAIT.phase[L.key]) % 1 + 1) % 1;
-        const r = solve(L, phi, rig.stride());
-        for (const c of L.chains) { c.j[0].rotation.z = r[0]; c.j[1].rotation.z = r[1]; c.j[2].rotation.z = r[2]; }
+        if (t === null) {
+          for (const c of L.chains) { c.j.forEach((g) => { g.rotation.z = 0; }); c.j[0].position.copy(L.P[0]); }
+          L.clamped = false; continue;
+        }
+        // 肩・股関節は胴と一緒に上下する(左右のずれは脚に伝えない。伝えると足が横へ滑る)
+        const hipDy = F(L.P[0].x, L.P[0].y, L.P[0].z).y;
+        // 足の位相 = 全体の位相 - その足の着地の時刻(2026-10-05 修正: 以前は足していたため、足の運びが
+        //   「後ろ左 → 前右 → 後ろ右 → 前左」(対角の順)になり、説明の「横の順」と食い違っていた)
+        const phi = ((t / rig.period() - GAIT.phase[L.key]) % 1 + 1) % 1;
+        const r = solve(L, phi, rig.stride(), hipDy);
+        L.r0 = r[0];
+        for (const c of L.chains) {
+          c.j[0].position.copy(L.P[0]).add(new THREE.Vector3(0, hipDy, 0));
+          c.j[0].rotation.z = r[0]; c.j[1].rotation.z = r[1]; c.j[2].rotation.z = r[2];
+        }
+      }
+      // 肩甲骨: 上腕骨の振りに合わせて、上の端のまわりに少し回る
+      for (const sc of rig.scapulae || []) {
+        const L = legs.find((l) => l.key === sc.key);
+        const a = t === null || !L ? 0 : (L.r0 || 0) * BODY.scapula;
+        sc.obj.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), a)).multiply(sc.baseQ);
       }
     },
   };
   return rig;
 }
 
-// 1 本の脚の、周期の中の位置 phi(0..1)での関節の回転
-function solve(L, phi, stride) {
+// 体の動きの場: 周期の中の位置 phi での、体の点 (x, y, z) のずれ(m)を返す関数を作る
+function bodyField(phi) {
+  const B = BODY, deg = Math.PI / 180, ref = GAIT.duty / 2;     // 位相の基準 = 後ろ左の足が着いている間の中ほど
+  const w = 2 * Math.PI * (phi - ref);
+  const midH = GAIT.phase.LH + GAIT.duty / 2, midF = GAIT.phase.LF + GAIT.duty / 2;     // 後ろ・前の脚が着いている間の中ほど
+  const bobH = B.bob * Math.cos(4 * Math.PI * (phi - midH)), bobF = B.bob * Math.cos(4 * Math.PI * (phi - midF));
+  const xH = -1.05, xF = 1.05;                                   // 股関節・肩関節の前後の位置
+  const roll = B.roll * deg * Math.sin(w);                       // 左右の傾き
+  const shift = -B.shift * Math.cos(w);                          // 支える側へ寄る(左 = -z)
+  const yaw = B.yaw * deg * Math.sin(w);
+  const nod = B.nod * deg * Math.sin(2 * w - 0.6);
+  const sm = (u) => { u = Math.min(1, Math.max(0, u)); return u * u * (3 - 2 * u); };
+  const out = new THREE.Vector3();
+  return (x, y, z) => {
+    const wHead = sm((x - B.xNeck) / 0.6), wTail = x < B.xTail ? Math.min(1, (B.xTail - x) / B.tailLen) : 0;
+    const bob = bobH + (bobF - bobH) * (x - xH) / (xF - xH);     // 前後の振り子の間を直線でつなぐ(頭は前、尾は後ろの振り子に従う)
+    let dy = bob * (1 - B.headKeep * wHead) + roll * z + nod * Math.max(0, x - B.xNeck) * wHead;
+    let dz = shift + yaw * (x - B.xMid) * (1 - wTail) - roll * (y - B.yMid);
+    if (wTail > 0) dz += -B.tail * Math.pow(wTail, 1.6) * Math.sin(w - 2 * Math.PI * B.tailLag * wTail);   // 尾は付け根から先へ遅れて揺れる
+    return out.set(0, dy, dz);
+  };
+}
+
+// 1 本の脚の、周期の中の位置 phi(0..1)での関節の回転。hipDy = 胴の上下で肩・股関節が上下した量
+function solve(L, phi, stride, hipDy = 0) {
   const { P, L1, L2 } = L;
-  const hip = new THREE.Vector2(P[0].x, P[0].y), toe0 = new THREE.Vector2(P[3].x, P[3].y);
+  const hip = new THREE.Vector2(P[0].x, P[0].y + hipDy), toe0 = new THREE.Vector2(P[3].x, P[3].y);
   const half = GAIT.duty * stride / 2;                    // 着いている間に、胴に対してつま先が後ろへ動く距離の半分
   // 着く範囲の中心は肩/股の真下寄り(つま先の静止位置へ 4 分の 1)。中ほど(2 分の 1)では、膝をほぼ伸ばした後ろあし
   //   (2026-10-04、USNM の骨の長さ)が前へ振り出したとき届かなかった(chk_walkscan で届かない 3 回・浮き 10.6 mm)

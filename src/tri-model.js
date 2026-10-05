@@ -257,6 +257,7 @@ export function buildTriceratops() {
 
   const curve = spineCurve();
   const rig = createRig();
+  const scapulae = [];        // 歩くとき上腕骨の振りに合わせて回す(tri-walk.js)
 
   // ── 皮膚 ───────────────────────────────────────────────
   skin.add(new THREE.Mesh(bodyGeometry(curve), skinMat));
@@ -313,7 +314,8 @@ export function buildTriceratops() {
     // 肩甲骨: 平たい板。背側の端は幅広く、関節窩の側は厚く広がる(楕円の塊をやめた。スキャンの観察)
     const scTop = new THREE.Vector3(0.66 - 0.62 * Math.cos(0.95), 2.10 + 0.62 * Math.sin(0.95), s * 0.62);
     const scBot = new THREE.Vector3(0.66 + 0.62 * Math.cos(0.95), 2.10 - 0.62 * Math.sin(0.95), s * 0.68);
-    skel.add(longBone(scTop, scBot, boneMat, { r0: 0.2, r1: 0.16, shaft: 0.12, flat: 0.22, hint: new THREE.Vector3(0, 0, s) }));
+    const scap = longBone(scTop, scBot, boneMat, { r0: 0.2, r1: 0.16, shaft: 0.12, flat: 0.22, hint: new THREE.Vector3(0, 0, s) });
+    scap.name = "scapula-" + (s > 0 ? "R" : "L"); skel.add(scap); scapulae.push({ obj: scap, key: (s > 0 ? "R" : "L") + "F" });
     skel.add(blob(new THREE.Vector3(1.15, 1.62, s * 0.64), new THREE.Vector3(0.23, 0.20, 0.07), boneMat, 24));
   }
   // 四肢の骨と指(2026-10-05 改: 両端が広がる長い骨・突起・糸巻き形の趾骨と蹄。関節の暗い球は外した。tri-bones.js)
@@ -331,25 +333,28 @@ export function buildTriceratops() {
         knobs: [{ u: 0.02, at: [0, -0.05], s: [0.06, 0.08, 0.06] }] }));
       c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off), boneMat, { r0: 0.06, r1: 0.07, shaft: 0.035, flat: 0.85, hint: fwdHint }));
     } else {
-      // 大腿骨: 内上へ向く骨頭(長軸に対して約 45 度、Hatcher ほか 1907)、外の大転子、中ほどの後ろ内に第四転子
-      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.12, r1: 0.14, shaft: 0.075, flat: 0.8, hint: fwdHint,
-        knobs: [{ u: 0.03, at: [-s * 0.12, 0], s: [0.09, 0.08, 0.09] }, { u: 0.06, at: [s * 0.07, 0.02], s: [0.05, 0.09, 0.07] },
-                { u: 0.42, at: [-s * 0.03, -0.07], s: [0.03, 0.12, 0.04] }] }));
-      // 脛骨(太い)と腓骨(細い。外側)
-      const off = new THREE.Vector3(0, 0, s * 0.07);
-      c.put(1, longBone(P[1].clone().sub(off.clone().multiplyScalar(0.3)), P[2], boneMat, { r0: 0.13, r1: 0.11, shaft: 0.06, flat: 0.8, hint: fwdHint }));
-      c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off), boneMat, { r0: 0.045, r1: 0.055, shaft: 0.025, flat: 0.8, hint: fwdHint }));
+      // 太さは USNM の寸法表(Gilmore 1905 / Hatcher ほか 1907 pp.191–192)による(2026-10-05。以前は見た目で決めた値で、関節が資料の 6 割ほどしかなかった)。
+      // 大腿骨: 近い端の幅 0.42(骨頭と大転子を含む)・遠い端の幅 0.43・軸の周囲 0.485 m。骨頭は内上へ(長軸に対して約 45 度、Hatcher ほか 1907)、
+      //   外に大転子、中ほどの後ろ内に第四転子。軸の半径 0.085 は周囲 0.485 を断面の楕円(前後/左右 0.8)に当てた値
+      c.put(0, longBone(P[0], P[1], boneMat, { r0: 0.16, r1: 0.215, shaft: 0.085, flat: 0.8, hint: fwdHint,
+        knobs: [{ u: 0.03, at: [-s * 0.14, 0], s: [0.09, 0.085, 0.09] }, { u: 0.06, at: [s * 0.10, 0.02], s: [0.07, 0.1, 0.08] },
+                { u: 0.42, at: [-s * 0.04, -0.08], s: [0.035, 0.13, 0.045] }] }));
+      // 脛骨: 近い端の幅 0.395・遠い端の幅 0.39 m(同表)。軸の太さは表に無い(推定)。
+      // 腓骨: USNM では復元で値が無い。細長く両端が平たく広がり、遠い端は脛骨の前面に密着(Hatcher ほか 1907 の Lull の脚注)。太さは推定
+      const off = new THREE.Vector3(0, 0, s * 0.11);
+      c.put(1, longBone(P[1].clone().sub(off.clone().multiplyScalar(0.25)), P[2], boneMat, { r0: 0.1975, r1: 0.195, shaft: 0.075, flat: 0.8, hint: fwdHint }));
+      c.put(1, longBone(P[1].clone().add(off), P[2].clone().add(off.clone().multiplyScalar(0.5)), boneMat, { r0: 0.06, r1: 0.07, shaft: 0.03, flat: 0.75, hint: fwdHint }));
     }
     // 手・足: 中手骨/中足骨を横に並べ、先に趾(趾骨の数: 後ろ 2-3-4-5 で I〜IV(Brown 1917 ほか)、前 2-3-4-3-1(出典は未確認)。末節骨は蹄)
     const n = front ? 5 : 4;
     const phal = front ? [[0.06, 0.07], [0.06, 0.05, 0.08], [0.05, 0.05, 0.05, 0.08], [0.04, 0.035, 0.04], [0.04]]
-                       : [[0.09, 0.12], [0.09, 0.07, 0.13], [0.08, 0.065, 0.055, 0.12], [0.06, 0.05, 0.045, 0.04, 0.08]];
+                       : [[0.09, 0.12], [0.09, 0.07, 0.13], [0.08, 0.065, 0.055, 0.12], [0.06, 0.05, 0.045, 0.04, 0.11]];   // 第 III 趾 計 0.32、第 IV 趾の蹄 0.11(USNM: 0.325 / 0.11)
     for (let k = 0; k < n; k++) {
       const spread = (k - (n - 1) / 2) * (front ? 0.07 : 0.085);
-      const mlen = front ? [0.85, 1.0, 1.0, 0.85, 0.6][k] : [0.75, 0.92, 1.0, 0.85][k];   // 後ろは III > II > IV > I(Brown 1917 ほか)
+      const mlen = front ? [0.85, 1.0, 1.0, 0.85, 0.6][k] : [0.70, 0.82, 1.0, 0.85][k];   // 後ろは III > II > IV > I(Brown 1917 ほか)。II/III = 0.29/0.355(USNM)、I と IV は推定
       const top = P[2].clone().add(new THREE.Vector3(0, 0, s * spread * 0.5));
       const bot = P[2].clone().lerp(P[3], mlen).add(new THREE.Vector3(0, 0, s * spread));
-      c.put(2, longBone(top, bot, boneMat, { r0: 0.045, r1: 0.04, shaft: 0.025, flat: 0.75, hint: fwdHint }));
+      c.put(2, longBone(top, bot, boneMat, { r0: front ? 0.045 : 0.06, r1: front ? 0.04 : 0.055, shaft: front ? 0.025 : 0.035, flat: 0.75, hint: fwdHint }));   // 太さは推定
       const ang = (front ? [-0.35, -0.1, 0.15, 0.45, 0.8] : [-0.35, -0.12, 0.1, 0.32])[k];
       const dir = new THREE.Vector3(Math.cos(ang), -0.25, s * Math.sin(ang));
       const width = front ? [0.05, 0.055, 0.05, 0.035, 0.03][k] : [0.06, 0.07, 0.065, 0.05][k];
@@ -427,6 +432,7 @@ export function buildTriceratops() {
     organs: [heartMat, lungMat, liverMat, gutMat], vessels: [artMat, veinMat], brain: [brainMat],
     skeleton: [boneMat, boneDark, hornMat, beakMat, eyeMat, toothMat, cartilageMat],
   };
+  rig.attachBody(layers, { scapulae });   // 歩くときの全身の連動(胴・首・頭・尾。tri-walk.js の BODY)
   return { root, layers, layerMats, skin, skeleton: skel, jaws: [SK.jawPivot, SK.skinJawPivot], rig };
 }
 
@@ -460,6 +466,10 @@ export const VIEWS = {
   chk_walk2: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walk: 0.5 },
   chk_walk3: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walk: 0.75 },
   chk_walkscan: { pos: [-0.2, 1.4, -11], target: [-0.2, 1.1, 0], layers: "skeleton", wire: 0, walkScan: 40 },
+  chk_walktop0: { pos: [-0.5, 9.0, 0.01], target: [-0.5, 1.5, 0], layers: "skin", wire: 0, walk: 0.0 },
+  chk_walktop1: { pos: [-0.5, 9.0, 0.01], target: [-0.5, 1.5, 0], layers: "skin", wire: 0, walk: 0.25 },
+  chk_walktop2: { pos: [-0.5, 9.0, 0.01], target: [-0.5, 1.5, 0], layers: "skin", wire: 0, walk: 0.5 },
+  chk_walktop3: { pos: [-0.5, 9.0, 0.01], target: [-0.5, 1.5, 0], layers: "skin", wire: 0, walk: 0.75 },
   chk_walk_skin: { pos: [6.5, 2.6, -8.5], target: [0, 1.3, 0], layers: "skin", wire: 0, walk: 0.4 },
   // 肋骨・胸骨・前あしの確かめ(骨格だけ)。chk_ribs_* は肋骨が皮膚の外へ出た量を document.title へ出す(ribCheck)
   chk_bones_hind:  { pos: [-0.9, 1.2, 3.2], target: [-0.9, 1.0, 0], layers: "skeleton", wire: 0 },
